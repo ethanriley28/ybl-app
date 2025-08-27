@@ -16,13 +16,16 @@ const btnLinkStyle: React.CSSProperties = {
   lineHeight: 1.2,
 };
 
+const navStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  flexWrap: 'wrap',
+};
+
 export default function TopBar() {
   async function handleSignOut() {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      window.location.href = '/auth';
-    }
+    try { await supabase.auth.signOut(); } finally { window.location.href = '/auth'; }
   }
 
   return (
@@ -44,7 +47,7 @@ export default function TopBar() {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
-          flexWrap: 'wrap', // allows wrapping on small screens
+          flexWrap: 'wrap',
         }}
       >
         {/* Brand (clickable) */}
@@ -64,20 +67,10 @@ export default function TopBar() {
         </a>
 
         {/* Nav buttons */}
-        <nav
-          style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-          }}
-        >
-          <a href="/pricing" style={btnLinkStyle}>
-            Pricing
-          </a>
-          <a href="/register" style={btnLinkStyle}>
-            Register Athlete
-          </a>
+        <nav style={navStyle}>
+          <a href="/pricing" style={btnLinkStyle}>Pricing</a>
+          <a href="/register" style={btnLinkStyle}>Register Athlete</a>
+          <a href="/profile" style={btnLinkStyle}>Profile</a>
         </nav>
 
         {/* Sign out */}
