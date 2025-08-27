@@ -1,6 +1,6 @@
 // app/auth/page.tsx
 'use client';
-export const dynamic = 'force-dynamic'; // avoid prerender issues
+export const dynamic = 'force-dynamic';
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
@@ -17,7 +17,6 @@ export default function AuthPage() {
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // Read ?mode=signUp from the URL without useSearchParams (no Suspense needed)
   React.useEffect(() => {
     const m = new URLSearchParams(window.location.search).get('mode');
     if ((m || '').toLowerCase() === 'signup') setMode('signUp');
@@ -198,12 +197,7 @@ export default function AuthPage() {
           )}
         </div>
 
-        {err && <div style={{ marginTop: 12, color: '#fecaca', fontSize: 14 }}>{err}</div>}
-        {msg && <div style={{ marginTop: 12, color: '#bbf7d0', fontSize: 14 }}>{msg}</div>}
-
-        <div style={{ marginTop: 16 }}>
-          <a href="/scheduler" style={{ color: '#93c5fd', textDecoration: 'none' }}>← Back to Scheduler</a>
-        </div>
+        {/* (Back to Scheduler link removed) */}
       </div>
     </main>
   );
