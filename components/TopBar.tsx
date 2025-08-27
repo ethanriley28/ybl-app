@@ -1,70 +1,103 @@
 // components/TopBar.tsx
 'use client';
-import React from 'react';
-import { supabase } from '@/lib/supabaseClient'; // if this import path errors, use: import { supabase } from '../lib/supabaseClient';
 
-const allowedCoachEmails = ['rileyethan5@gmail.com']; // <-- put your coach email(s) here
+import * as React from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+const btnLinkStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '8px 12px',
+  borderRadius: 10,
+  border: '1px solid #374151',
+  background: '#0f172a',
+  color: '#ffffff',
+  textDecoration: 'none',
+  fontWeight: 700,
+  lineHeight: 1.2,
+};
 
 export default function TopBar() {
-  const [email, setEmail] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null);
-    });
-  }, []);
-
   async function handleSignOut() {
-    try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage)
-        .filter((k) => k.startsWith('ert_') || k.startsWith('ybl_'))
-        .forEach((k) => localStorage.removeItem(k));
-    } catch {}
-    window.location.href = '/auth';
+      await supabase.auth.signOut();
+    } finally {
+      window.location.href = '/auth';
+    }
   }
 
-  const isCoach = email ? allowedCoachEmails.includes(email) : false;
-
   return (
-    <div
+    <header
       style={{
-        borderBottom: '1px solid #e5e7eb',
-        padding: '10px 16px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        background: '#0b0b0b',
+        borderBottom: '1px solid #222',
       }}
     >
-      <a href="/scheduler" style={{ fontWeight: 700, textDecoration: 'none', color: '#111' }}>
-        Ethan Riley Training
-      </a>
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: '0 auto',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap', // allows wrapping on small screens
+        }}
+      >
+        {/* Brand (clickable) */}
+        <a
+          href="/scheduler"
+          style={{
+            color: '#ffffff',
+            textDecoration: 'none',
+            fontWeight: 900,
+            fontSize: 18,
+            letterSpacing: 0.3,
+            lineHeight: 1.2,
+          }}
+          aria-label="Go to Scheduler"
+        >
+          Ethan Riley Training
+        </a>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <a href="/pricing" style={{ textDecoration: 'none', color: '#111' }}>Pricing</a>
+        {/* Nav buttons */}
+        <nav
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <a href="/pricing" style={btnLinkStyle}>
+            Pricing
+          </a>
+          <a href="/register" style={btnLinkStyle}>
+            Register Athlete
+          </a>
+        </nav>
 
-        {isCoach && (
-          <>
-            <a href="/coach/subscriptions" style={{ textDecoration: 'none', color: '#111' }}>Coach</a>
-            <a href="/coach/calendar" style={{ textDecoration: 'none', color: '#111' }}>Coach Calendar</a>
-          </>
-        )}
-
-        <a href="/register" style={{ textDecoration: 'none', color: '#111' }}>Register Athlete</a>
-
+        {/* Sign out */}
         <button
           onClick={handleSignOut}
           style={{
-            padding: '6px 10px',
+            padding: '8px 12px',
             borderRadius: 10,
             border: '1px solid #111',
-            background: '#fff',
+            background: '#ffffff',
+            color: '#111111',
+            fontWeight: 800,
             cursor: 'pointer',
+            lineHeight: 1.2,
           }}
+          aria-label="Sign out"
         >
           Sign out
         </button>
       </div>
-    </div>
+    </header>
   );
 }
