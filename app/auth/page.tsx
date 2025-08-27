@@ -86,6 +86,7 @@ export default function AuthPage() {
           boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
         }}
       >
+        {/* Mode toggle */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button
             type="button"
@@ -142,7 +143,7 @@ export default function AuthPage() {
               onChange={(e) => setPassword(e.target.value)}
               style={{
                 width: '100%', padding: '12px 14px', borderRadius: 10,
-                border: '1px solid #374151', background: '#0b1220', color: '#fff',
+                border: '1px solid '#374151', background: '#0b1220', color: '#fff',
               }}
             />
           </label>
@@ -160,17 +161,21 @@ export default function AuthPage() {
           </button>
         </form>
 
+        {/* Actions under the form */}
         <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
-          <button
-            type="button"
-            onClick={handleForgot}
-            style={{
-              width: '100%', padding: '10px 12px', borderRadius: 10,
-              border: '1px solid #374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
-            }}
-          >
-            Forgot password?
-          </button>
+          {/* Forgot password only shown on Sign in */}
+          {mode === 'signIn' && (
+            <button
+              type="button"
+              onClick={handleForgot}
+              style={{
+                width: '100%', padding: '10px 12px', borderRadius: 10,
+                border: '1px solid '#374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
+              }}
+            >
+              Forgot password?
+            </button>
+          )}
 
           {mode === 'signIn' ? (
             <button
@@ -178,7 +183,7 @@ export default function AuthPage() {
               onClick={() => setMode('signUp')}
               style={{
                 width: '100%', padding: '10px 12px', borderRadius: 10,
-                border: '1px solid #374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
+                border: '1px solid '#374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
               }}
             >
               Don’t have an account? Create one
@@ -189,7 +194,7 @@ export default function AuthPage() {
               onClick={() => setMode('signIn')}
               style={{
                 width: '100%', padding: '10px 12px', borderRadius: 10,
-                border: '1px solid #374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
+                border: '1px solid '#374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
               }}
             >
               Already have an account? Sign in
@@ -197,7 +202,8 @@ export default function AuthPage() {
           )}
         </div>
 
-        {/* (Back to Scheduler link removed) */}
+        {err && <div style={{ marginTop: 12, color: '#fecaca', fontSize: 14 }}>{err}</div>}
+        {msg && <div style={{ marginTop: 12, color: '#bbf7d0', fontSize: 14 }}>{msg}</div>}
       </div>
     </main>
   );
