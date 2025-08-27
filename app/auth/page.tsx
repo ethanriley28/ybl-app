@@ -1,15 +1,15 @@
 // app/auth/page.tsx
 'use client';
+export const dynamic = 'force-dynamic'; // avoid prerender issues
 
 import * as React from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 type Mode = 'signIn' | 'signUp';
 
 export default function AuthPage() {
   const router = useRouter();
-  const params = useSearchParams();
   const [mode, setMode] = React.useState<Mode>('signIn');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -17,11 +17,11 @@ export default function AuthPage() {
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // Allow deep-link like /auth?mode=signUp
+  // Read ?mode=signUp from the URL without useSearchParams (no Suspense needed)
   React.useEffect(() => {
-    const m = (params.get('mode') || '').toLowerCase();
-    if (m === 'signup') setMode('signUp');
-  }, [params]);
+    const m = new URLSearchParams(window.location.search).get('mode');
+    if ((m || '').toLowerCase() === 'signup') setMode('signUp');
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,21 +87,14 @@ export default function AuthPage() {
           boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
         }}
       >
-        {/* Mode header */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button
             type="button"
             onClick={() => setMode('signIn')}
             aria-pressed={mode === 'signIn'}
             style={{
-              flex: 1,
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: '1px solid #333',
-              background: mode === 'signIn' ? '#1f2937' : '#0f172a',
-              color: '#fff',
-              fontWeight: 700,
-              cursor: 'pointer',
+              flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #333',
+              background: mode === 'signIn' ? '#1f2937' : '#0f172a', color: '#fff', fontWeight: 700, cursor: 'pointer',
             }}
           >
             Sign in
@@ -111,14 +104,8 @@ export default function AuthPage() {
             onClick={() => setMode('signUp')}
             aria-pressed={mode === 'signUp'}
             style={{
-              flex: 1,
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: '1px solid #333',
-              background: mode === 'signUp' ? '#1f2937' : '#0f172a',
-              color: '#fff',
-              fontWeight: 700,
-              cursor: 'pointer',
+              flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #333',
+              background: mode === 'signUp' ? '#1f2937' : '#0f172a', color: '#fff', fontWeight: 700, cursor: 'pointer',
             }}
           >
             Create account
@@ -140,12 +127,8 @@ export default function AuthPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: 10,
-                border: '1px solid #374151',
-                background: '#0b1220',
-                color: '#fff',
+                width: '100%', padding: '12px 14px', borderRadius: 10,
+                border: '1px solid #374151', background: '#0b1220', color: '#fff',
               }}
             />
           </label>
@@ -159,12 +142,8 @@ export default function AuthPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: 10,
-                border: '1px solid #374151',
-                background: '#0b1220',
-                color: '#fff',
+                width: '100%', padding: '12px 14px', borderRadius: 10,
+                border: '1px solid #374151', background: '#0b1220', color: '#fff',
               }}
             />
           </label>
@@ -173,33 +152,22 @@ export default function AuthPage() {
             type="submit"
             disabled={loading}
             style={{
-              marginTop: 4,
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: '1px solid #111',
-              background: '#fff',
-              color: '#111',
-              fontWeight: 800,
-              cursor: 'pointer',
+              marginTop: 4, padding: '12px 14px', borderRadius: 10,
+              border: '1px solid #111', background: '#fff', color: '#111',
+              fontWeight: 800, cursor: 'pointer',
             }}
           >
             {loading ? (mode === 'signIn' ? 'Signing in…' : 'Creating…') : mode === 'signIn' ? 'Sign in' : 'Create account'}
           </button>
         </form>
 
-        {/* Big targets for mobile */}
         <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
           <button
             type="button"
             onClick={handleForgot}
             style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: '1px solid #374151',
-              background: '#0f172a',
-              color: '#cbd5e1',
-              cursor: 'pointer',
+              width: '100%', padding: '10px 12px', borderRadius: 10,
+              border: '1px solid #374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
             }}
           >
             Forgot password?
@@ -210,13 +178,8 @@ export default function AuthPage() {
               type="button"
               onClick={() => setMode('signUp')}
               style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid #374151',
-                background: '#0f172a',
-                color: '#cbd5e1',
-                cursor: 'pointer',
+                width: '100%', padding: '10px 12px', borderRadius: 10,
+                border: '1px solid #374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
               }}
             >
               Don’t have an account? Create one
@@ -226,13 +189,8 @@ export default function AuthPage() {
               type="button"
               onClick={() => setMode('signIn')}
               style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid #374151',
-                background: '#0f172a',
-                color: '#cbd5e1',
-                cursor: 'pointer',
+                width: '100%', padding: '10px 12px', borderRadius: 10,
+                border: '1px solid #374151', background: '#0f172a', color: '#cbd5e1', cursor: 'pointer',
               }}
             >
               Already have an account? Sign in
@@ -240,16 +198,8 @@ export default function AuthPage() {
           )}
         </div>
 
-        {err && (
-          <div style={{ marginTop: 12, color: '#fecaca', fontSize: 14 }}>
-            {err}
-          </div>
-        )}
-        {msg && (
-          <div style={{ marginTop: 12, color: '#bbf7d0', fontSize: 14 }}>
-            {msg}
-          </div>
-        )}
+        {err && <div style={{ marginTop: 12, color: '#fecaca', fontSize: 14 }}>{err}</div>}
+        {msg && <div style={{ marginTop: 12, color: '#bbf7d0', fontSize: 14 }}>{msg}</div>}
 
         <div style={{ marginTop: 16 }}>
           <a href="/scheduler" style={{ color: '#93c5fd', textDecoration: 'none' }}>← Back to Scheduler</a>
