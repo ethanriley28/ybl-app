@@ -17,6 +17,11 @@ export default function AuthPage() {
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
+  // NEW: verification modal state
+  const [showVerify, setShowVerify] = React.useState(false);
+  const [verifyEmail, setVerifyEmail] = React.useState('');
+  const [resending, setResending] = React.useState(false);
+
   // Allow /auth?mode=signUp
   React.useEffect(() => {
     const m = new URLSearchParams(window.location.search).get('mode');
@@ -37,13 +42,22 @@ export default function AuthPage() {
         if (error) throw error;
         router.replace('/scheduler');
       } else {
+        // Sign up: Supabase will send a confirmation email (if confirmations are enabled)
+        const addr = email.trim();
         const { error } = await supabase.auth.signUp({
-          email: email.trim(),
+          email: addr,
           password,
+          options: { emailRedirectTo: `${location.origin}/auth` },
         });
         if (error) throw error;
-        setMsg('Account created. You can sign in now.');
+
+        // Show verify modal
+        setVerifyEmail(addr);
+        setShowVerify(true);
+
+        // Switch UI back to Sign in after creating the account
         setMode('signIn');
+        setMsg(null);
       }
     } catch (e: any) {
       setErr(e?.message || 'Something went wrong');
@@ -68,6 +82,27 @@ export default function AuthPage() {
       setErr(e?.message || 'Could not send reset email');
     } finally {
       setLoading(false);
+    }
+  }
+
+  // NEW: resend verification
+  async function resendVerification() {
+    if (!verifyEmail) return;
+    try {
+      setResending(true);
+      setErr(null);
+      setMsg(null);
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: verifyEmail,
+        options: { emailRedirectTo: `${location.origin}/auth` },
+      });
+      if (error) throw error;
+      setMsg('Verification email sent again.');
+    } catch (e: any) {
+      setErr(e?.message || 'Could not resend verification email');
+    } finally {
+      setResending(false);
     }
   }
 
@@ -244,7 +279,7 @@ export default function AuthPage() {
                 width: '100%',
                 padding: '10px 12px',
                 borderRadius: 10,
-                border: '1px solid #374151',
+                border: '1px solid '#374151',
                 background: '#0f172a',
                 color: '#cbd5e1',
                 cursor: 'pointer',
@@ -266,6 +301,79 @@ export default function AuthPage() {
           </div>
         )}
       </div>
+
+      {/* Verification modal */}
+      {showVerify && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 16,
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#111',
+              border: '1px solid #222',
+              borderRadius: 12,
+              padding: 20,
+              color: '#fff',
+            }}
+          >
+            <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>
+              Verify your email
+            </h2>
+            <p style={{ color: '#cbd5e1', fontSize: 14, marginBottom: 12 }}>
+              We sent a verification link to <span style={{ color: '#fff' }}>{verifyEmail}</span>. 
+              Please open your email and tap the link to activate your account.
+            </p>
+            <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
+              Tip: Check your spam or promotions folder if you don’t see it.
+            </p>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <button
+                type="button"
+                disabled={resending}
+                onClick={resendVerification}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid #374151',
+                  background: '#0f172a',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                }}
+              >
+                {resending ? 'Resending…' : 'Resend verification email'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowVerify(false)}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid #111',
+                  background: '#fff',
+                  color: '#111',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
