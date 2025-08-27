@@ -17,7 +17,7 @@ export default function AuthPage() {
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // NEW: verification modal state
+  // Verification modal state
   const [showVerify, setShowVerify] = React.useState(false);
   const [verifyEmail, setVerifyEmail] = React.useState('');
   const [resending, setResending] = React.useState(false);
@@ -42,7 +42,6 @@ export default function AuthPage() {
         if (error) throw error;
         router.replace('/scheduler');
       } else {
-        // Sign up: Supabase will send a confirmation email (if confirmations are enabled)
         const addr = email.trim();
         const { error } = await supabase.auth.signUp({
           email: addr,
@@ -54,8 +53,6 @@ export default function AuthPage() {
         // Show verify modal
         setVerifyEmail(addr);
         setShowVerify(true);
-
-        // Switch UI back to Sign in after creating the account
         setMode('signIn');
         setMsg(null);
       }
@@ -85,7 +82,6 @@ export default function AuthPage() {
     }
   }
 
-  // NEW: resend verification
   async function resendVerification() {
     if (!verifyEmail) return;
     try {
@@ -279,7 +275,7 @@ export default function AuthPage() {
                 width: '100%',
                 padding: '10px 12px',
                 borderRadius: 10,
-                border: '1px solid '#374151',
+                border: '1px solid #374151',
                 background: '#0f172a',
                 color: '#cbd5e1',
                 cursor: 'pointer',
@@ -332,7 +328,7 @@ export default function AuthPage() {
               Verify your email
             </h2>
             <p style={{ color: '#cbd5e1', fontSize: 14, marginBottom: 12 }}>
-              We sent a verification link to <span style={{ color: '#fff' }}>{verifyEmail}</span>. 
+              We sent a verification link to <span style={{ color: '#fff' }}>{verifyEmail}</span>.
               Please open your email and tap the link to activate your account.
             </p>
             <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
