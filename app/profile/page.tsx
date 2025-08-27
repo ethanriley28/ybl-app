@@ -20,6 +20,13 @@ type AthleteRow = {
   weight_lb: number | null;
 };
 
+type VideoRow = {
+  id: string;
+  title: string | null;
+  url: string;
+  created_at: string;
+};
+
 const inputBase: React.CSSProperties = {
   width: '100%',
   padding: '12px 14px',
@@ -38,6 +45,10 @@ export default function ProfilePage() {
   const [uploading, setUploading] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
+
+  const [videos, setVideos] = React.useState<VideoRow[]>([]);
+  const [vErr, setVErr] = React.useState<string | null>(null);
+  const [vLoading, setVLoading] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
@@ -58,9 +69,10 @@ export default function ProfilePage() {
     })();
   }, []);
 
+  // Load form when athlete changes
   React.useEffect(() => {
     const a = athletes.find((x) => x.id === selectedId);
-    if (!a) { setForm({}); return; }
+    if (!a) { setForm({}); setVideos([]); return; }
     setForm({
       age: a.age ?? null,
       position: a.position ?? '',
@@ -73,6 +85,24 @@ export default function ProfilePage() {
       height_in: a.height_in ?? null,
       weight_lb: a.weight_lb ?? null,
     });
+
+    // Fetch videos for this athlete (RLS ensures only owner can read)
+    (async () => {
+      setVLoading(true); setVErr(null);
+      try {
+        const { data, error } = await supabase
+          .from('athlete_videos')
+          .select('id, title, url, created_at')
+          .eq('athlete_id', a.id)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        setVideos((data ?? []) as VideoRow[]);
+      } catch (e: any) {
+        setVErr(e?.message || 'Failed to load videos');
+      } finally {
+        setVLoading(false);
+      }
+    })();
   }, [selectedId, athletes]);
 
   async function saveProfile() {
@@ -213,6 +243,7 @@ export default function ProfilePage() {
 
             {/* Basics */}
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+              {/* age/position/throws/bats/school ... (unchanged) */}
               <div style={{ display: 'grid', gap: 6 }}>
                 <span style={{ fontSize: 14, color: '#cbd5e1' }}>Age</span>
                 <input
@@ -336,6 +367,33 @@ export default function ProfilePage() {
               </button>
               {msg && <span style={{ marginLeft: 10, color: '#bbf7d0' }}>{msg}</span>}
               {err && <span style={{ marginLeft: 10, color: '#fecaca' }}>{err}</span>}
+            </div>
+
+            {/* Videos list */}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 800, marginBottom: 8 }}>Videos</div>
+              {vLoading && <div style={{ color: '#94a3b8' }}>Loading videos…</div>}
+              {vErr && <div style={{ color: '#fecaca' }}>{vErr}</div>}
+              {!vLoading && !vErr && videos.length === 0 && (
+                <div style={{ color: '#94a3b8' }}>No videos yet.</div>
+              )}
+              <div style={{ display: 'grid', gap: 12 }}>
+                {videos.map(v => (
+                  <div key={v.id} style={{ border: '1px solid #222', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700 }}>{v.title || 'Untitled video'}</div>
+                      <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                        {new Date(v.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <video
+                      controls
+                      src={v.url}
+                      style={{ width: '100%', borderRadius: 8, background: '#000' }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ) : (
