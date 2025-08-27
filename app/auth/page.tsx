@@ -1,148 +1,260 @@
+// app/auth/page.tsx
 'use client';
 
-import React from 'react';
-import { supabase } from '@/lib/supabaseClient'; // if alias fails, use: import { supabase } from '../../lib/supabaseClient';
+import * as React from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+
+type Mode = 'signIn' | 'signUp';
 
 export default function AuthPage() {
-  const [mode, setMode] = React.useState<'signIn' | 'signUp'>('signIn');
+  const router = useRouter();
+  const params = useSearchParams();
+  const [mode, setMode] = React.useState<Mode>('signIn');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [msg, setMsg] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [msg, setMsg] = React.useState<string | null>(null);
+  const [err, setErr] = React.useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
+  // Allow deep-link like /auth?mode=signUp
+  React.useEffect(() => {
+    const m = (params.get('mode') || '').toLowerCase();
+    if (m === 'signup') setMode('signUp');
+  }, [params]);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMsg(null);
     setLoading(true);
+    setErr(null);
+    setMsg(null);
     try {
       if (mode === 'signIn') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) setMsg(error.message);
-        else window.location.href = '/scheduler';
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (error) throw error;
+        router.replace('/scheduler');
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) setMsg(error.message);
-        else {
-          // If email confirmation is ON, they must check email. If OFF, they may be auto-signed-in.
-          setMsg('Account created. Check email for confirmation if required, then sign in.');
-          // Optional: try redirect if session exists
-          const { data: s } = await supabase.auth.getSession();
-          if (s.session) window.location.href = '/scheduler';
-        }
+        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+        if (error) throw error;
+        setMsg('Account created. You can sign in now.');
+        setMode('signIn');
       }
+    } catch (e: any) {
+      setErr(e?.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   }
 
-  async function onForgotPassword() {
-    const value = prompt('Enter your email to reset password:')?.trim() || '';
-    if (!value) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(value, {
-      redirectTo: `${window.location.origin}/auth/reset`,
-    });
-    alert(error ? error.message : 'Reset link sent! Check your email.');
+  async function handleForgot() {
+    const input = prompt('Enter your account email to reset password:')?.trim();
+    if (!input) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      setMsg(null);
+      const { error } = await supabase.auth.resetPasswordForEmail(input, {
+        redirectTo: `${location.origin}/auth/reset`,
+      });
+      if (error) throw error;
+      setMsg('Reset link sent. Check your email.');
+    } catch (e: any) {
+      setErr(e?.message || 'Could not send reset email');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <main style={{ maxWidth: 520, margin: '60px auto', padding: 16 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 10 }}>
-        {mode === 'signIn' ? 'Sign in' : 'Create account'}
-      </h1>
-
-      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
-        <label style={{ fontSize: 13, color: '#374151' }}>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #d1d5db', marginTop: 6 }}
-            required
-          />
-        </label>
-
-        <label style={{ fontSize: 13, color: '#374151' }}>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #d1d5db', marginTop: 6 }}
-            required
-          />
-        </label>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: '10px 12px',
-            borderRadius: 10,
-            border: '1px solid #111',
-            background: '#111',
-            color: '#fff',
-            cursor: 'pointer',
-            minWidth: 140
-          }}
-        >
-          {loading ? 'Please wait…' : (mode === 'signIn' ? 'Sign in' : 'Create account')}
-        </button>
-
-        {mode === 'signIn' && (
+    <main
+      style={{
+        minHeight: '100dvh',
+        display: 'grid',
+        placeItems: 'center',
+        padding: 16,
+        background: '#0b0b0b',
+        color: '#fff',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 420,
+          background: '#111',
+          border: '1px solid #222',
+          borderRadius: 12,
+          padding: 20,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+        }}
+      >
+        {/* Mode header */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button
             type="button"
-            onClick={onForgotPassword}
+            onClick={() => setMode('signIn')}
+            aria-pressed={mode === 'signIn'}
             style={{
-              background: 'transparent',
-              border: 0,
+              flex: 1,
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid #333',
+              background: mode === 'signIn' ? '#1f2937' : '#0f172a',
+              color: '#fff',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('signUp')}
+            aria-pressed={mode === 'signUp'}
+            style={{
+              flex: 1,
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid #333',
+              background: mode === 'signUp' ? '#1f2937' : '#0f172a',
+              color: '#fff',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Create account
+          </button>
+        </div>
+
+        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
+          {mode === 'signIn' ? 'Sign in' : 'Create your account'}
+        </h1>
+
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 14, color: '#cbd5e1' }}>Email</span>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: '1px solid #374151',
+                background: '#0b1220',
+                color: '#fff',
+              }}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 14, color: '#cbd5e1' }}>Password</span>
+            <input
+              type="password"
+              autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: '1px solid #374151',
+                background: '#0b1220',
+                color: '#fff',
+              }}
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: 4,
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: '1px solid #111',
+              background: '#fff',
               color: '#111',
-              textDecoration: 'underline',
-              marginTop: -4,
-              textAlign: 'left',
-              cursor: 'pointer'
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            {loading ? (mode === 'signIn' ? 'Signing in…' : 'Creating…') : mode === 'signIn' ? 'Sign in' : 'Create account'}
+          </button>
+        </form>
+
+        {/* Big targets for mobile */}
+        <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+          <button
+            type="button"
+            onClick={handleForgot}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid #374151',
+              background: '#0f172a',
+              color: '#cbd5e1',
+              cursor: 'pointer',
             }}
           >
             Forgot password?
           </button>
-        )}
 
+          {mode === 'signIn' ? (
+            <button
+              type="button"
+              onClick={() => setMode('signUp')}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid #374151',
+                background: '#0f172a',
+                color: '#cbd5e1',
+                cursor: 'pointer',
+              }}
+            >
+              Don’t have an account? Create one
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setMode('signIn')}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid #374151',
+                background: '#0f172a',
+                color: '#cbd5e1',
+                cursor: 'pointer',
+              }}
+            >
+              Already have an account? Sign in
+            </button>
+          )}
+        </div>
+
+        {err && (
+          <div style={{ marginTop: 12, color: '#fecaca', fontSize: 14 }}>
+            {err}
+          </div>
+        )}
         {msg && (
-          <div role="status" aria-live="polite" style={{ marginTop: 4 }}>
+          <div style={{ marginTop: 12, color: '#bbf7d0', fontSize: 14 }}>
             {msg}
           </div>
         )}
-      </form>
 
-      <div style={{ marginTop: 14, fontSize: 14 }}>
-        {mode === 'signIn' ? (
-          <>
-            Don’t have an account?{' '}
-            <button
-              type="button"
-              onClick={() => (setMode('signUp'), setMsg(null))}
-              style={{ background: 'transparent', border: 0, color: '#111', textDecoration: 'underline', cursor: 'pointer' }}
-            >
-              Create one
-            </button>
-          </>
-        ) : (
-          <>
-            Already have an account?{' '}
-            <button
-              type="button"
-              onClick={() => (setMode('signIn'), setMsg(null))}
-              style={{ background: 'transparent', border: 0, color: '#111', textDecoration: 'underline', cursor: 'pointer' }}
-            >
-              Sign in
-            </button>
-          </>
-        )}
+        <div style={{ marginTop: 16 }}>
+          <a href="/scheduler" style={{ color: '#93c5fd', textDecoration: 'none' }}>← Back to Scheduler</a>
+        </div>
       </div>
-
-      <a href="/scheduler" style={{ display: 'inline-block', marginTop: 24, textDecoration: 'none', color: '#111' }}>
-        ← Back to Scheduler
-      </a>
     </main>
   );
 }
