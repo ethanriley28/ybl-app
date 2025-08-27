@@ -1,7 +1,7 @@
 // components/TopBar.tsx
 'use client';
 import React from 'react';
-import { supabase } from '@/lib/supabaseClient'; // if this import errors, use: import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient'; // if this import path errors, use: import { supabase } from '../lib/supabaseClient';
 
 const allowedCoachEmails = ['rileyethan5@gmail.com']; // <-- put your coach email(s) here
 
@@ -27,25 +27,40 @@ export default function TopBar() {
   const isCoach = email ? allowedCoachEmails.includes(email) : false;
 
   return (
-    <div style={{
-      borderBottom: '1px solid #e5e7eb',
-      padding: '10px 16px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center'
-    }}>
+    <div
+      style={{
+        borderBottom: '1px solid #e5e7eb',
+        padding: '10px 16px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+      }}
+    >
       <a href="/scheduler" style={{ fontWeight: 700, textDecoration: 'none', color: '#111' }}>
         Ethan Riley Training
       </a>
+
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <a href="/pricing" style={{ textDecoration: 'none', color: '#111' }}>Pricing</a>
+
         {isCoach && (
-          <a href="/coach/subscriptions" style={{ textDecoration: 'none', color: '#111' }}>Coach</a>
+          <>
+            <a href="/coach/subscriptions" style={{ textDecoration: 'none', color: '#111' }}>Coach</a>
+            <a href="/coach/calendar" style={{ textDecoration: 'none', color: '#111' }}>Coach Calendar</a>
+          </>
         )}
+
         <a href="/register" style={{ textDecoration: 'none', color: '#111' }}>Register Athlete</a>
+
         <button
           onClick={handleSignOut}
-          style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #111', background: '#fff', cursor: 'pointer' }}
+          style={{
+            padding: '6px 10px',
+            borderRadius: 10,
+            border: '1px solid #111',
+            background: '#fff',
+            cursor: 'pointer',
+          }}
         >
           Sign out
         </button>
