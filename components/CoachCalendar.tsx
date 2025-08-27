@@ -10,8 +10,6 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 
 // Styles for FullCalendar
-import '@fullcalendar/daygrid/main.css';
-import '@fullcalendar/timegrid/main.css';
 
 type BookingRow = {
   id: string;
