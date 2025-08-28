@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import BookingCalendar from '@/components/BookingCalendar';
+import BookingCalendar from './BookingCalendar';
 
 type Athlete = { id: string; full_name: string | null };
 
