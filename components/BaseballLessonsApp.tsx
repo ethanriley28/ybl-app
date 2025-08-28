@@ -153,7 +153,6 @@ export default function BaseballLessonsApp() {
 
           {/* Calendar under the form */}
           <BookingCalendar
-            athleteId={null}          // selection mode; booking happens via the form
             slotMinutes={bkLength}    // 30 or 60
             onPickSlot={(start) => {
               const yyyy = start.getFullYear();
