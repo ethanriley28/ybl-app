@@ -1,43 +1,34 @@
-// components/TopBar.tsx
 'use client';
-
 import * as React from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-const btnLinkStyle: React.CSSProperties = {
-  display: 'inline-block',
-  padding: '8px 12px',
-  borderRadius: 10,
-  border: '1px solid #374151',
-  background: '#0f172a',
-  color: '#ffffff',
-  textDecoration: 'none',
-  fontWeight: 700,
-  lineHeight: 1.2,
-};
-
-const navStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 8,
-  alignItems: 'center',
-  flexWrap: 'wrap',
-};
-
 export default function TopBar() {
   async function handleSignOut() {
-    try { await supabase.auth.signOut(); } finally { window.location.href = '/auth'; }
+    await supabase.auth.signOut();
+    // send users back to the auth page
+    window.location.href = '/auth';
   }
 
-  return (
-    <header
+  const link = (href: string, label: string) => (
+    <a
+      key={href}
+      href={href}
       style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        background: '#0b0b0b',
-        borderBottom: '1px solid #222',
+        padding: '8px 12px',
+        borderRadius: 10,
+        border: '1px solid #374151',
+        background: '#0f172a',
+        color: '#fff',
+        textDecoration: 'none',
+        whiteSpace: 'nowrap'
       }}
     >
+      {label}
+    </a>
+  );
+
+  return (
+    <header style={{ background: '#0b0b0b', borderBottom: '1px solid #111' }}>
       <div
         style={{
           maxWidth: 1100,
@@ -46,50 +37,39 @@ export default function TopBar() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
+          gap: 12
         }}
       >
-        {/* Brand (clickable) */}
+        {/* Brand (tap goes to Schedule) */}
         <a
           href="/scheduler"
-          style={{
-            color: '#ffffff',
-            textDecoration: 'none',
-            fontWeight: 900,
-            fontSize: 18,
-            letterSpacing: 0.3,
-            lineHeight: 1.2,
-          }}
-          aria-label="Go to Scheduler"
+          style={{ color: '#fff', fontWeight: 800, fontSize: 20, textDecoration: 'none' }}
         >
           Ethan Riley Training
         </a>
 
-        {/* Nav buttons */}
-        <nav style={navStyle}>
-          <a href="/pricing" style={btnLinkStyle}>Pricing</a>
-          <a href="/register" style={btnLinkStyle}>Register Athlete</a>
-          <a href="/profile" style={btnLinkStyle}>Profile</a>
+        {/* NAV — scrolls horizontally on small screens so everything stays visible */}
+        <nav style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+          {link('/pricing', 'Pricing')}
+          {link('/scheduler', 'Schedule')}
+          {link('/register', 'Register Athlete')}
+          {link('/profile', 'Profile')}
+          <button
+            onClick={handleSignOut}
+            style={{
+              padding: '8px 12px',
+              borderRadius: 10,
+              border: '1px solid #374151',
+              background: '#fff',
+              color: '#0b0b0b',
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer'
+            }}
+          >
+            Sign out
+          </button>
         </nav>
-
-        {/* Sign out */}
-        <button
-          onClick={handleSignOut}
-          style={{
-            padding: '8px 12px',
-            borderRadius: 10,
-            border: '1px solid #111',
-            background: '#ffffff',
-            color: '#111111',
-            fontWeight: 800,
-            cursor: 'pointer',
-            lineHeight: 1.2,
-          }}
-          aria-label="Sign out"
-        >
-          Sign out
-        </button>
       </div>
     </header>
   );
