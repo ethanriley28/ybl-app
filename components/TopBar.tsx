@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabaseClient';
 export default function TopBar() {
   async function handleSignOut() {
     await supabase.auth.signOut();
-    // send users back to the auth page
     window.location.href = '/auth';
   }
 
@@ -40,7 +39,6 @@ export default function TopBar() {
           gap: 12
         }}
       >
-        {/* Brand (tap goes to Schedule) */}
         <a
           href="/scheduler"
           style={{ color: '#fff', fontWeight: 800, fontSize: 20, textDecoration: 'none' }}
@@ -48,10 +46,11 @@ export default function TopBar() {
           Ethan Riley Training
         </a>
 
-        {/* NAV — scrolls horizontally on small screens so everything stays visible */}
+        {/* Scrollable on mobile so everything stays visible */}
         <nav style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
           {link('/pricing', 'Pricing')}
           {link('/scheduler', 'Schedule')}
+          {link('/metrics', 'Metrics')}
           {link('/register', 'Register Athlete')}
           {link('/profile', 'Profile')}
           <button
