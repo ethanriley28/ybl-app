@@ -43,7 +43,7 @@ export default function BookingCalendar({
   const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + daysAhead); return d; }, [daysAhead]);
 
-  // fetch occupied from API
+  // fetch occupied
   React.useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -64,7 +64,7 @@ export default function BookingCalendar({
     return () => { isMounted = false; };
   }, [startRange, endRange, refreshKey]);
 
-  // compute green “open” slots from weekly hours minus occupied
+  // compute green "open" slots from weekly hours minus occupied
   const weekly = React.useMemo(() => parseWeekly(), []);
   const available = React.useMemo(() => {
     const out: { start: Date; end: Date }[] = [];
@@ -96,15 +96,13 @@ export default function BookingCalendar({
     return out.sort((a,b) => a.start.getTime() - b.start.getTime());
   }, [occupied, weekly, slotMinutes, startRange, endRange]);
 
-  // events to render (OPEN first so BOOKED can override color)
+  // events (OPEN first so BOOKED overrides on the same slot)
   const openEvents = available.slice(0, 1000).map(s => ({
     start: s.start,
     end: s.end,
     title: 'Open',
-    backgroundColor: '#0e4f43',  // deep green like your screenshot
-    borderColor: '#0e4f43',
-    textColor: '#eafaf4',
-    display: 'block' as const,   // fill entire slot
+    classNames: ['open-slot'],     // colored via CSS in globals.css
+    display: 'block' as const,     // fill entire slot
     overlap: false,
     extendedProps: { kind: 'open' as const },
   }));
@@ -113,9 +111,7 @@ export default function BookingCalendar({
     start: new Date(o.start),
     end: new Date(o.end),
     title: 'Booked',
-    backgroundColor: '#b91c1c',  // red
-    borderColor: '#991b1b',
-    textColor: '#ffffff',
+    classNames: ['booked-slot'],
     display: 'block' as const,
     overlap: false,
     extendedProps: { kind: 'booked' as const },
@@ -123,40 +119,7 @@ export default function BookingCalendar({
 
   return (
     <div>
-      {/* Styles matching your “full-green cells + dark header + two-line day headers” look */}
-      <style jsx global>{`
-        /* Card border/rails come from your page container; this polishes FC internals */
-        .fc .fc-toolbar.fc-header-toolbar {
-          background: #0b0b0b;
-          padding: 6px 10px;
-          border-radius: 8px 8px 0 0;
-        }
-        .fc .fc-toolbar-title { color: #e5e7eb; font-weight: 800; }
-        .fc .fc-button {
-          background: #0f172a; border: 1px solid #0f172a; color: #fff; border-radius: 8px;
-        }
-        .fc .fc-button-primary:not(:disabled).fc-button-active { background: #0f172a; }
-        .fc .fc-col-header-cell {
-          background: #0b0b0b;   /* dark header row */
-        }
-        .fc .fc-col-header-cell-cushion {
-          display: flex; flex-direction: column; align-items: center;
-          font-weight: 800; line-height: 1.1; color: #e5e7eb !important;
-        }
-        .fc .fc-col-header-cell-cushion .fc-day-line-1 { font-size: 13px; }
-        .fc .fc-col-header-cell-cushion .fc-day-line-2 { font-size: 12px; color: #9ca3af; font-weight: 700; }
-        .fc .fc-timegrid-slot-label { color: #e5e7eb; }
-        .fc-theme-standard .fc-scrollgrid,
-        .fc-theme-standard td, .fc-theme-standard th { border-color: #1f2937; }
-        .fc .fc-timegrid-now-indicator-line { border-color: #f59e0b; }
-        /* Remove selection highlight so green stays solid */
-        .fc .fc-highlight { background: transparent; }
-        /* Event fills the whole slot with square corners */
-        .fc .fc-timegrid-event { border-radius: 0; }
-        /* Hide default event time text—only show 'Open'/'Booked' */
-        .fc .fc-event-time { display: none; }
-      `}</style>
-
+      {/* minimal in-file tweaks; colors handled in globals.css */}
       {loading && <div style={{ color:'#94a3b8', padding: 8 }}>Loading…</div>}
       {err && <div style={{ color:'#fecaca', padding: 8 }}>Error: {err}</div>}
 
@@ -172,7 +135,7 @@ export default function BookingCalendar({
         slotDuration={slotMinutes === 60 ? '01:00:00' : '00:30:00'}
         eventOrder="-start"
         headerToolbar={{ start: 'title', center: '', end: 'today prev,next' }}
-        // Two-line day header: “Mon” (bold) on top, “Aug 25” below (muted)
+        // two-line header exactly like your screenshot
         dayHeaderContent={(arg) => {
           const d = arg.date;
           const top  = d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
@@ -189,7 +152,7 @@ export default function BookingCalendar({
           return { domNodes: [wrap] };
         }}
         slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
-        events={[...openEvents, ...bookedEvents]} // OPEN first so BOOKED overrides color
+        events={[...openEvents, ...bookedEvents]}
         eventContent={(arg) => {
           const kind = (arg.event.extendedProps as any)?.kind;
           const label = kind === 'booked' ? 'Booked' : 'Open';
@@ -201,9 +164,9 @@ export default function BookingCalendar({
           return { domNodes: [el] };
         }}
         dateClick={(info) => {
-          // clicking a green cell background
-          const d = new Date(info.date);
+          // allow tapping a green background cell
           const step = slotMinutes;
+          const d = new Date(info.date);
           const snapped = new Date(d);
           snapped.setMinutes(Math.floor(d.getMinutes() / step) * step, 0, 0);
           const ok = openEvents.some(e => e.start.getTime() === snapped.getTime());
