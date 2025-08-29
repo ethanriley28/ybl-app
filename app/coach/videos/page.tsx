@@ -67,8 +67,11 @@ export default function CoachVideosPage() {
 
       setMsg('Uploaded!');
       setTitle('');
-      setFile(null);
-      (document.getElementById('file-input') as HTMLInputElement | null)?.value = '';
+setFile(null);
+// reset the file input without optional-chaining on the left-hand side
+const inputEl = document.getElementById('file-input') as HTMLInputElement | null;
+if (inputEl) inputEl.value = '';
+
     } catch (e: any) {
       setErr(e?.message || 'Upload failed');
     } finally {
