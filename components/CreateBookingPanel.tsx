@@ -1,19 +1,25 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Props = {
   athleteId: string | null;
   athleteName: string | null;
-  slotMinutes: number;
+
+  // controlled date/time from parent (calendar sets these)
+  dateStr: string;                            // "YYYY-MM-DD"
+  timeStr: string;                            // "HH:MM"
+  setDateStr: React.Dispatch<React.SetStateAction<string>>;
+  setTimeStr: React.Dispatch<React.SetStateAction<string>>;
+
+  // slot length and setter (keeps calendar + form in sync)
+  slotMinutes: number;                        // 30 or 60
   setSlotMinutes: React.Dispatch<React.SetStateAction<number>>;
+
+  // after a successful insert
   onBooked?: () => void;
 };
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0');
-}
 
 function addMinutesISO(local: Date, minutes: number): string {
   return new Date(local.getTime() + minutes * 60_000).toISOString();
@@ -22,20 +28,17 @@ function addMinutesISO(local: Date, minutes: number): string {
 export default function CreateBookingPanel({
   athleteId,
   athleteName,
+  dateStr,
+  timeStr,
+  setDateStr,
+  setTimeStr,
   slotMinutes,
   setSlotMinutes,
   onBooked,
 }: Props) {
-  const todayLocal = useMemo(() => {
-    const t = new Date();
-    return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
-  }, []);
-
-  const [dateStr, setDateStr] = useState<string>(todayLocal);
-  const [timeStr, setTimeStr] = useState<string>('17:00');
-  const [note, setNote] = useState<string>('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string>('');
+  const [note, setNote] = React.useState<string>('');
+  const [saving, setSaving] = React.useState(false);
+  const [msg, setMsg] = React.useState<string>('');
 
   async function handleAdd() {
     setMsg('');
@@ -43,16 +46,21 @@ export default function CreateBookingPanel({
       setMsg('Pick an athlete first.');
       return;
     }
+    if (!dateStr || !timeStr) {
+      setMsg('Pick a date and time.');
+      return;
+    }
+
     setSaving(true);
     try {
-      // Local -> UTC ISO
+      // Build UTC from LOCAL date/time (prevents off-by-one-day issues)
       const [y, m, d] = dateStr.split('-').map(Number);
       const [hh, mm] = timeStr.split(':').map(Number);
       const startLocal = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
       const startISO = startLocal.toISOString();
       const endISO = addMinutesISO(startLocal, slotMinutes);
 
-      // 1) Conflict check (POST supported by our API)
+      // 1) Conflict check
       const r = await fetch('/api/bookings/conflict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,11 +112,18 @@ export default function CreateBookingPanel({
   return (
     <div style={{ border: '1px solid #0b1220', borderRadius: 12, padding: 14, background: '#050a12' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {/* Date */}
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 12, color: '#93a4b8' }}>Date</span>
-          <input type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} style={inputBase} />
+          <input
+            type="date"
+            value={dateStr}
+            onChange={(e) => setDateStr(e.target.value)}
+            style={inputBase}
+          />
         </label>
 
+        {/* Time */}
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 12, color: '#93a4b8' }}>Time</span>
           <input
@@ -120,6 +135,7 @@ export default function CreateBookingPanel({
           />
         </label>
 
+        {/* Length buttons */}
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             onClick={() => setSlotMinutes(30)}
@@ -147,6 +163,7 @@ export default function CreateBookingPanel({
           </button>
         </div>
 
+        {/* Note */}
         <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
           <span style={{ fontSize: 12, color: '#93a4b8' }}>Note (optional)</span>
           <input

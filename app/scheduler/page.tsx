@@ -10,11 +10,17 @@ import TopBar from '@/components/TopBar';
 type Athlete = { id: string; full_name: string | null };
 
 export default function SchedulerPage() {
-  const [athletes, setAthletes] = React.useState<Athlete[]>([]);
-  const [athleteId, setAthleteId] = React.useState<string | null>(null);
-  const [athleteName, setAthleteName] = React.useState<string | null>(null);
-  const [slotMinutes, setSlotMinutes] = React.useState<number>(30);
-  const [refreshKey, setRefreshKey] = React.useState(0);
+  const [dateStr, setDateStr] = React.useState<string>(() => {
+  const t = new Date();
+  const mm = String(t.getMonth() + 1).padStart(2, '0');
+  const dd = String(t.getDate()).padStart(2, '0');
+  return `${t.getFullYear()}-${mm}-${dd}`;
+});
+const [timeStr, setTimeStr] = React.useState<string>('17:00');
+const [slotMinutes, setSlotMinutes] = React.useState<number>(30);
+
+// bump this to refetch the calendar after booking
+const [refreshKey, setRefreshKey] = React.useState(0);
 
   React.useEffect(() => {
     let on = true;
@@ -81,10 +87,14 @@ export default function SchedulerPage() {
       <CreateBookingPanel
         athleteId={athleteId}
         athleteName={athleteName}
-        slotMinutes={slotMinutes}
-        setSlotMinutes={setSlotMinutes}
-        onBooked={() => setRefreshKey(x => x + 1)}
-      />
+       dateStr={dateStr}
+  timeStr={timeStr}
+  setDateStr={setDateStr}
+  setTimeStr={setTimeStr}
+  slotMinutes={slotMinutes}
+  setSlotMinutes={setSlotMinutes}
+  onBooked={() => setRefreshKey((x) => x + 1)}
+/>
 
       {/* Calendar */}
       <section style={{
@@ -95,11 +105,19 @@ export default function SchedulerPage() {
           See openings
         </div>
         <div style={{ padding: 12 }}>
-          <BookingCalendar
-            slotMinutes={slotMinutes}
-            refreshKey={refreshKey}
-            onPickSlot={onPick}
-          />
+         <BookingCalendar
+  slotMinutes={slotMinutes}
+  refreshKey={refreshKey}
+  onPickSlot={(startLocal) => {
+    const y = startLocal.getFullYear();
+    const m = String(startLocal.getMonth() + 1).padStart(2, '0');
+    const d = String(startLocal.getDate()).padStart(2, '0');
+    const hh = String(startLocal.getHours()).padStart(2, '0');
+    const mm = String(startLocal.getMinutes()).padStart(2, '0');
+    setDateStr(`${y}-${m}-${d}`);
+    setTimeStr(`${hh}:${mm}`);
+  }}
+/>
           <div style={{ color: '#9ca3af', fontSize: 12, marginTop: 8 }}>
             Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
           </div>
