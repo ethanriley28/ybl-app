@@ -43,7 +43,7 @@ export default function BookingCalendar({
   const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + daysAhead); return d; }, [daysAhead]);
 
-  // fetch occupied
+  // fetch occupied from API
   React.useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -64,7 +64,7 @@ export default function BookingCalendar({
     return () => { isMounted = false; };
   }, [startRange, endRange, refreshKey]);
 
-  // build available slots from weekly hours – remove occupied
+  // compute green “open” slots from weekly hours minus occupied
   const weekly = React.useMemo(() => parseWeekly(), []);
   const available = React.useMemo(() => {
     const out: { start: Date; end: Date }[] = [];
@@ -96,54 +96,64 @@ export default function BookingCalendar({
     return out.sort((a,b) => a.start.getTime() - b.start.getTime());
   }, [occupied, weekly, slotMinutes, startRange, endRange]);
 
-  // events to render (green = open filling ENTIRE slot, red = booked)
-  const bookedEvents = occupied.map(o => ({
-    start: new Date(o.start),
-    end: new Date(o.end),
-    title: 'Booked',
-    backgroundColor: '#dc2626',
-    borderColor: '#b91c1c',
-    textColor: '#ffffff',
-    display: 'block' as const,  // full cell fill
-    overlap: false,
-    extendedProps: { kind: 'booked' as const },
-  }));
-
+  // events to render (OPEN first so BOOKED can override color)
   const openEvents = available.slice(0, 1000).map(s => ({
     start: s.start,
     end: s.end,
     title: 'Open',
-    backgroundColor: '#0a3f34',      // deep green
-    borderColor: '#0a3f34',
-    textColor: '#d1fae5',
-    display: 'block' as const,       // full cell fill
+    backgroundColor: '#0e4f43',  // deep green like your screenshot
+    borderColor: '#0e4f43',
+    textColor: '#eafaf4',
+    display: 'block' as const,   // fill entire slot
     overlap: false,
     extendedProps: { kind: 'open' as const },
   }));
 
+  const bookedEvents = occupied.map(o => ({
+    start: new Date(o.start),
+    end: new Date(o.end),
+    title: 'Booked',
+    backgroundColor: '#b91c1c',  // red
+    borderColor: '#991b1b',
+    textColor: '#ffffff',
+    display: 'block' as const,
+    overlap: false,
+    extendedProps: { kind: 'booked' as const },
+  }));
+
   return (
     <div>
-      {/* Styles to match your “full-green” look with two-line day headers */}
+      {/* Styles matching your “full-green cells + dark header + two-line day headers” look */}
       <style jsx global>{`
-        .fc .fc-toolbar-title { color: #e5e7eb; font-weight: 800; }
+        /* Card border/rails come from your page container; this polishes FC internals */
         .fc .fc-toolbar.fc-header-toolbar {
-          background: #0b0b0b; padding: 6px 8px; border-radius: 8px 8px 0 0;
+          background: #0b0b0b;
+          padding: 6px 10px;
+          border-radius: 8px 8px 0 0;
         }
-        .fc .fc-button { background: #111; border: 1px solid #111; }
-        .fc .fc-col-header-cell { background: #0b0b0b; }
+        .fc .fc-toolbar-title { color: #e5e7eb; font-weight: 800; }
+        .fc .fc-button {
+          background: #0f172a; border: 1px solid #0f172a; color: #fff; border-radius: 8px;
+        }
+        .fc .fc-button-primary:not(:disabled).fc-button-active { background: #0f172a; }
+        .fc .fc-col-header-cell {
+          background: #0b0b0b;   /* dark header row */
+        }
         .fc .fc-col-header-cell-cushion {
-          color: #e5e7eb !important; font-weight: 700; line-height: 1.1;
           display: flex; flex-direction: column; align-items: center;
+          font-weight: 800; line-height: 1.1; color: #e5e7eb !important;
         }
+        .fc .fc-col-header-cell-cushion .fc-day-line-1 { font-size: 13px; }
+        .fc .fc-col-header-cell-cushion .fc-day-line-2 { font-size: 12px; color: #9ca3af; font-weight: 700; }
         .fc .fc-timegrid-slot-label { color: #e5e7eb; }
         .fc-theme-standard .fc-scrollgrid,
         .fc-theme-standard td, .fc-theme-standard th { border-color: #1f2937; }
         .fc .fc-timegrid-now-indicator-line { border-color: #f59e0b; }
-        /* Remove tan selection/drag highlights */
+        /* Remove selection highlight so green stays solid */
         .fc .fc-highlight { background: transparent; }
-        /* Make event boxes fill the whole slot visually */
+        /* Event fills the whole slot with square corners */
         .fc .fc-timegrid-event { border-radius: 0; }
-        /* Hide default event time text; we only show 'Open'/'Booked' labels */
+        /* Hide default event time text—only show 'Open'/'Booked' */
         .fc .fc-event-time { display: none; }
       `}</style>
 
@@ -155,28 +165,43 @@ export default function BookingCalendar({
         initialView="timeGridWeek"
         height="auto"
         allDaySlot={false}
-        slotMinTime="17:00:00"               // 5 PM
+        slotMinTime="17:00:00"               // 5:00 PM
         slotMaxTime="20:30:00"               // 8:30 PM
         nowIndicator
         selectable={false}
         slotDuration={slotMinutes === 60 ? '01:00:00' : '00:30:00'}
         eventOrder="-start"
         headerToolbar={{ start: 'title', center: '', end: 'today prev,next' }}
-        dayHeaderFormat={{ weekday: 'short', month: 'short', day: 'numeric' }}
+        // Two-line day header: “Mon” (bold) on top, “Aug 25” below (muted)
+        dayHeaderContent={(arg) => {
+          const d = arg.date;
+          const top  = d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
+          const bot  = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); // Aug 25
+          const wrap = document.createElement('div');
+          const l1 = document.createElement('span');
+          const l2 = document.createElement('span');
+          l1.className = 'fc-day-line-1';
+          l2.className = 'fc-day-line-2';
+          l1.textContent = top;
+          l2.textContent = bot;
+          wrap.appendChild(l1);
+          wrap.appendChild(l2);
+          return { domNodes: [wrap] };
+        }}
         slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
-        events={[...openEvents, ...bookedEvents]}  // put OPEN first so red overrides
+        events={[...openEvents, ...bookedEvents]} // OPEN first so BOOKED overrides color
         eventContent={(arg) => {
           const kind = (arg.event.extendedProps as any)?.kind;
           const label = kind === 'booked' ? 'Booked' : 'Open';
           const el = document.createElement('div');
           el.style.fontWeight = '800';
           el.style.fontSize = '12px';
-          el.style.padding = '2px 4px';
+          el.style.padding = '2px 6px';
           el.textContent = label;
           return { domNodes: [el] };
         }}
         dateClick={(info) => {
-          // allow tapping a green gap (not only the event box)
+          // clicking a green cell background
           const d = new Date(info.date);
           const step = slotMinutes;
           const snapped = new Date(d);
