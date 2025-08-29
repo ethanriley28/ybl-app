@@ -3,12 +3,6 @@
 import React, { useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-/**
- * Props:
- * - athleteId / athleteName from the selected athlete dropdown
- * - slotMinutes and setSlotMinutes come from the parent so calendar and form stay in sync
- * - onBooked is called after a successful insert so the calendar can refetch
- */
 type Props = {
   athleteId: string | null;
   athleteName: string | null;
@@ -21,15 +15,6 @@ function pad2(n: number) {
   return String(n).padStart(2, '0');
 }
 
-/** Build a UTC ISO string from local date+time strings */
-function toUTCISO(dateStr: string, timeStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const [hh, mm] = timeStr.split(':').map(Number);
-  const local = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
-  return local.toISOString(); // correct UTC moment (with Z)
-}
-
-/** Add minutes to a local Date and return ISO */
 function addMinutesISO(local: Date, minutes: number): string {
   return new Date(local.getTime() + minutes * 60_000).toISOString();
 }
@@ -41,7 +26,6 @@ export default function CreateBookingPanel({
   setSlotMinutes,
   onBooked,
 }: Props) {
-  // default to today (local) and 17:00
   const todayLocal = useMemo(() => {
     const t = new Date();
     return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
@@ -61,32 +45,32 @@ export default function CreateBookingPanel({
     }
     setSaving(true);
     try {
-      // 1) Build UTC ISO times from the LOCAL pickers
+      // Local -> UTC ISO
       const [y, m, d] = dateStr.split('-').map(Number);
       const [hh, mm] = timeStr.split(':').map(Number);
       const startLocal = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
       const startISO = startLocal.toISOString();
       const endISO = addMinutesISO(startLocal, slotMinutes);
 
-      // 2) Check overlap on server (UTC vs UTC)
-      const conflictRes = await fetch('/api/bookings/conflict', {
+      // 1) Conflict check (POST supported by our API)
+      const r = await fetch('/api/bookings/conflict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ startISO, endISO }),
       });
-      const conflictJson = await conflictRes.json().catch(() => ({} as any));
-      if (!conflictRes.ok || !conflictJson?.ok) {
-        setMsg(conflictJson?.error || 'Could not check availability.');
+      const j = await r.json().catch(() => ({} as any));
+      if (!r.ok || !j?.ok) {
+        setMsg(j?.error || 'Could not check availability.');
         return;
       }
-      if (conflictJson.conflict) {
+      if (j.conflict) {
         setMsg('That time is already booked. Pick another slot.');
         return;
       }
 
-      // 3) Insert booking
+      // 2) Insert booking
       const user = (await supabase.auth.getUser()).data.user;
-      const { error: insErr } = await supabase.from('bookings').insert({
+      const { error } = await supabase.from('bookings').insert({
         user_id: user?.id ?? null,
         athlete_id: athleteId,
         athlete_name: athleteName,
@@ -94,9 +78,8 @@ export default function CreateBookingPanel({
         end_ts: endISO,
         note: note || null,
       });
-
-      if (insErr) {
-        setMsg(insErr.message || 'Insert failed.');
+      if (error) {
+        setMsg(error.message || 'Insert failed.');
         return;
       }
 
@@ -119,39 +102,24 @@ export default function CreateBookingPanel({
   };
 
   return (
-    <div
-      style={{
-        border: '1px solid #0b1220',
-        borderRadius: 12,
-        padding: 14,
-        background: '#050a12',
-      }}
-    >
+    <div style={{ border: '1px solid #0b1220', borderRadius: 12, padding: 14, background: '#050a12' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {/* Date */}
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 12, color: '#93a4b8' }}>Date</span>
-          <input
-            type="date"
-            value={dateStr}
-            onChange={(e) => setDateStr(e.target.value)}
-            style={inputBase}
-          />
+          <input type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} style={inputBase} />
         </label>
 
-        {/* Time */}
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 12, color: '#93a4b8' }}>Time</span>
           <input
             type="time"
             value={timeStr}
             onChange={(e) => setTimeStr(e.target.value)}
-            step={1800} // 30-minute picker steps
+            step={1800}
             style={inputBase}
           />
         </label>
 
-        {/* Length buttons */}
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             onClick={() => setSlotMinutes(30)}
@@ -179,7 +147,6 @@ export default function CreateBookingPanel({
           </button>
         </div>
 
-        {/* Note */}
         <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
           <span style={{ fontSize: 12, color: '#93a4b8' }}>Note (optional)</span>
           <input
