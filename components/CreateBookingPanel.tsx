@@ -5,12 +5,15 @@ import { supabase } from '@/lib/supabaseClient';
 
 /**
  * Props:
- * - athleteId, athleteName come from the selected athlete dropdown
+ * - athleteId / athleteName from the selected athlete dropdown
+ * - slotMinutes and setSlotMinutes come from the parent so calendar and form stay in sync
  * - onBooked is called after a successful insert so the calendar can refetch
  */
 type Props = {
   athleteId: string | null;
   athleteName: string | null;
+  slotMinutes: number;
+  setSlotMinutes: React.Dispatch<React.SetStateAction<number>>;
   onBooked?: () => void;
 };
 
@@ -23,16 +26,22 @@ function toUTCISO(dateStr: string, timeStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   const [hh, mm] = timeStr.split(':').map(Number);
   const local = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
-  return local.toISOString(); // -> correct UTC moment (with Z)
+  return local.toISOString(); // correct UTC moment (with Z)
 }
 
-/** Add minutes to a UTC/local Date and return ISO (we pass a Date object in local time) */
+/** Add minutes to a local Date and return ISO */
 function addMinutesISO(local: Date, minutes: number): string {
   return new Date(local.getTime() + minutes * 60_000).toISOString();
 }
 
-export default function CreateBookingPanel({ athleteId, athleteName, onBooked }: Props) {
-  // default to today's local date and 17:00
+export default function CreateBookingPanel({
+  athleteId,
+  athleteName,
+  slotMinutes,
+  setSlotMinutes,
+  onBooked,
+}: Props) {
+  // default to today (local) and 17:00
   const todayLocal = useMemo(() => {
     const t = new Date();
     return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
@@ -40,7 +49,6 @@ export default function CreateBookingPanel({ athleteId, athleteName, onBooked }:
 
   const [dateStr, setDateStr] = useState<string>(todayLocal);
   const [timeStr, setTimeStr] = useState<string>('17:00');
-  const [slotMinutes, setSlotMinutes] = useState<number>(30);
   const [note, setNote] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string>('');
@@ -53,16 +61,14 @@ export default function CreateBookingPanel({ athleteId, athleteName, onBooked }:
     }
     setSaving(true);
     try {
-      // 1) Build UTC ISO times from LOCAL pickers
-      const startLocal = (() => {
-        const [y, m, d] = dateStr.split('-').map(Number);
-        const [hh, mm] = timeStr.split(':').map(Number);
-        return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
-      })();
+      // 1) Build UTC ISO times from the LOCAL pickers
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const [hh, mm] = timeStr.split(':').map(Number);
+      const startLocal = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
       const startISO = startLocal.toISOString();
       const endISO = addMinutesISO(startLocal, slotMinutes);
 
-      // 2) Check for overlap on the server (UTC→UTC comparison)
+      // 2) Check overlap on server (UTC vs UTC)
       const conflictRes = await fetch('/api/bookings/conflict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,8 +90,8 @@ export default function CreateBookingPanel({ athleteId, athleteName, onBooked }:
         user_id: user?.id ?? null,
         athlete_id: athleteId,
         athlete_name: athleteName,
-        start_ts: startISO, // timestamptz in DB
-        end_ts: endISO,     // timestamptz in DB
+        start_ts: startISO,
+        end_ts: endISO,
         note: note || null,
       });
 
@@ -96,7 +102,7 @@ export default function CreateBookingPanel({ athleteId, athleteName, onBooked }:
 
       setMsg('Booked!');
       setNote('');
-      if (onBooked) onBooked();
+      onBooked?.();
     } finally {
       setSaving(false);
     }
