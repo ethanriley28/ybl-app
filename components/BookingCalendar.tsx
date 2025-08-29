@@ -1,234 +1,201 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 
 type Props = {
-  /** length picker in minutes (30 or 60). We still render 30-min cells for clarity */
+  /** 30 or 60 — used for how long a booking is when the user taps a slot */
   slotMinutes: number;
-  /** bump this number to force a refetch after booking */
+  /** bump this number to force a re-fetch from parent (optional) */
   refreshKey?: number;
-  /** called when a green (open) slot is clicked */
+  /** called when user taps a green slot */
   onPickSlot?: (startLocal: Date) => void;
 };
 
-type BookingRow = { start_ts: string; end_ts: string };
+type RawOcc = {
+  start?: string;
+  end?: string;
+  start_ts?: string;
+  end_ts?: string;
+};
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+type Busy = { start: Date; end: Date };
 
-/** Return a local Date that is the Sunday 00:00 of the week containing d */
-function startOfWeekSunday(d: Date): Date {
+function toUTCISO(local: Date) {
+  return new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString();
+}
+
+function toLocal(d: string | Date) {
+  const dt = typeof d === 'string' ? new Date(d) : d;
+  return new Date(dt.getTime() + new Date().getTimezoneOffset() * 60000);
+}
+
+function startOfWeekMonday(d: Date) {
   const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  const day = x.getDay(); // 0..6 (Sun..Sat)
+  const day = (x.getDay() + 6) % 7; // 0 = Monday
   x.setDate(x.getDate() - day);
+  x.setHours(0, 0, 0, 0);
   return x;
 }
 
-function pad2(n: number) {
-  return String(n).padStart(2, '0');
+function addMinutes(d: Date, n: number) {
+  const x = new Date(d);
+  x.setMinutes(x.getMinutes() + n);
+  return x;
 }
 
-function monthShort(n: number) {
-  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][n]!;
+function formatDow(d: Date) {
+  return d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
+}
+function formatMonthDay(d: Date) {
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); // Aug 30
+}
+function formatTimeLabel(d: Date) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-/** Key for a 30-min cell by local date+time */
-function cellKey(dt: Date) {
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
-}
+export default function BookingCalendar({ slotMinutes, refreshKey = 0, onPickSlot }: Props) {
+  // Week = Monday..Friday view
+  const [anchor, setAnchor] = useState<Date>(() => startOfWeekMonday(new Date()));
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 5 }).map((_, i) => addMinutes(addMinutes(anchor, i * 24 * 60), 0));
+  }, [anchor]);
 
-/** Iterate from start (inclusive) to end (exclusive) stepping minutes */
-function* rangeByMinutes(start: Date, end: Date, stepMin: number) {
-  for (let t = new Date(start); t < end; t = new Date(t.getTime() + stepMin * 60_000)) {
-    yield new Date(t);
-  }
-}
+  // Times shown down the left (every 30 min from 5:00pm → 8:00pm)
+  const timeLabels = useMemo(() => {
+    const labels: Date[] = [];
+    const base = new Date(anchor);
+    base.setHours(17, 0, 0, 0); // 5:00pm
+    const end = new Date(anchor);
+    end.setHours(20, 0, 0, 0); // 8:00pm
+    let cur = new Date(base);
+    while (cur < end) {
+      labels.push(new Date(cur));
+      cur = addMinutes(cur, 30);
+    }
+    return labels;
+  }, [anchor]);
 
-/** Convert a LOCAL date to an ISO UTC string boundary for SQL filtering */
-function localToUTCISO(d: Date) {
-  return d.toISOString(); // includes 'Z'
-}
+  // Occupied slots for the whole week
+  const [busy, setBusy] = useState<Busy[]>([]);
+  const [loading, setLoading] = useState(false);
 
-export default function BookingCalendar({ slotMinutes, refreshKey, onPickSlot }: Props) {
-  // which week is shown
-  const [cursor, setCursor] = useState<Date>(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    return now;
-  });
-
-  const weekStart = useMemo(() => startOfWeekSunday(cursor), [cursor]);
-  const weekEnd = useMemo(() => {
-    const x = new Date(weekStart);
-    x.setDate(x.getDate() + 7);
-    return x;
-  }, [weekStart]);
-
-  // cells (30-min) we’ll mark as booked
-  const [bookedKeys, setBookedKeys] = useState<Set<string>>(new Set());
-
-  // fetch bookings that overlap our visible week (any time between 5–8pm local)
   useEffect(() => {
-    let cancelled = false;
+    let on = true;
     (async () => {
-      // Boundaries for SQL in UTC
-      const sqlStart = localToUTCISO(weekStart);
-      const sqlEnd = localToUTCISO(weekEnd);
+      setLoading(true);
+      try {
+        const weekStartLocal = startOfWeekMonday(new Date(anchor));
+        const weekEndLocal = new Date(weekStartLocal);
+        weekEndLocal.setDate(weekEndLocal.getDate() + 7);
 
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('start_ts,end_ts')
-        .gte('end_ts', sqlStart)   // booking ends after weekStart
-        .lt('start_ts', sqlEnd);   // booking starts before weekEnd
+        const qs = `start=${encodeURIComponent(toUTCISO(weekStartLocal))}&end=${encodeURIComponent(
+          toUTCISO(weekEndLocal)
+        )}`;
 
-      if (cancelled) return;
-      if (error || !data) {
-        setBookedKeys(new Set());
-        return;
+        // This endpoint should already exist from earlier steps.
+        const r = await fetch(`/api/bookings/occupied?${qs}`);
+        const j = await r.json().catch(() => ({} as any));
+
+        // Accept shapes: {occupied:[{start,end}]} OR plain array OR {data:[...]}
+        const arr: RawOcc[] = Array.isArray(j)
+          ? j
+          : Array.isArray(j?.occupied)
+          ? j.occupied
+          : Array.isArray(j?.data)
+          ? j.data
+          : [];
+
+        const rows: Busy[] = arr
+          .map((o) => {
+            const s = o.start_ts || o.start;
+            const e = o.end_ts || o.end;
+            if (!s || !e) return null;
+            // convert to LOCAL for overlap checks
+            return { start: toLocal(s), end: toLocal(e) };
+          })
+          .filter(Boolean) as Busy[];
+
+        if (on) setBusy(rows);
+      } catch {
+        if (on) setBusy([]);
+      } finally {
+        if (on) setLoading(false);
       }
-
-      // Turn each booking into 30-min local cell keys between 5:00–8:00 PM
-      const next = new Set<string>();
-      for (const row of data as BookingRow[]) {
-        const s = new Date(row.start_ts); // parsed as local time from UTC instant
-        const e = new Date(row.end_ts);
-
-        // march in 30-min chunks
-        for (const t of rangeByMinutes(s, e, 30)) {
-          const hour = t.getHours();
-          const minute = t.getMinutes();
-          // Only mark rows we actually render (5–8 PM)
-          if (hour < 17 || hour >= 20) continue;
-          // snap to 0 or 30 to be safe
-          t.setMinutes(minute < 30 ? 0 : 30, 0, 0);
-          next.add(cellKey(t));
-        }
-      }
-      setBookedKeys(next);
     })();
+    return () => {
+      on = false;
+    };
+  }, [anchor, refreshKey]);
 
-    return () => { cancelled = true; };
-  }, [weekStart, weekEnd, refreshKey]);
-
-  // hours shown (30-min grid)
-  const ROWS: Array<{ label: string; minutes: number }> = [
-    { label: '5:00 PM', minutes: 17 * 60 + 0 },
-    { label: '5:30 PM', minutes: 17 * 60 + 30 },
-    { label: '6:00 PM', minutes: 18 * 60 + 0 },
-    { label: '6:30 PM', minutes: 18 * 60 + 30 },
-    { label: '7:00 PM', minutes: 19 * 60 + 0 },
-    { label: '7:30 PM', minutes: 19 * 60 + 30 },
-  ];
-
-  // days (Sun..Sat)
-  const DAYS = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(weekStart);
-      d.setDate(d.getDate() + i);
-      return d;
-    });
-  }, [weekStart]);
-
-  const weekLabel = useMemo(() => {
-    const a = DAYS[0];
-    const b = DAYS[6];
-    return `${monthShort(a.getMonth())} ${a.getDate()} – ${monthShort(b.getMonth())} ${b.getDate()}, ${b.getFullYear()}`;
-  }, [DAYS]);
+  function isBusy(cellStart: Date, cellEnd: Date) {
+    return busy.some((b) => b.start < cellEnd && b.end > cellStart);
+  }
 
   return (
-    <div style={{ border: '1px solid #0b1220', borderRadius: 12, overflow: 'hidden', background: '#050a12' }}>
-      {/* header bar with label + nav */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderBottom: '1px solid #0b1220' }}>
-        <div style={{ color: '#cbd5e1', fontSize: 14 }}>{weekLabel}</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setCursor(new Date())} style={navBtn}>today</button>
-          <button onClick={() => setCursor(d => { const x = new Date(d); x.setDate(x.getDate() - 7); return x; })} style={navBtn}>‹</button>
-          <button onClick={() => setCursor(d => { const x = new Date(d); x.setDate(x.getDate() + 7); return x; })} style={navBtn}>›</button>
-        </div>
-      </div>
-
-      {/* two-line day headers */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '120px repeat(7, 1fr)',
-          borderBottom: '1px solid #0b1220',
-          background: '#0a1220',
-        }}
-      >
-        <div />
-        {DAYS.map((d, i) => (
-          <div key={i} style={{ padding: '8px 6px', textAlign: 'center' }}>
-            <div style={{ color: '#cbd5e1', fontWeight: 700 }}>{DAY_NAMES[d.getDay()]}</div>
-            <div style={{ color: '#93a4b8', fontSize: 12 }}>{monthShort(d.getMonth())} {d.getDate()}</div>
+    <div className="bk-root">
+      {/* Header: days */}
+      <div className="bk-head">
+        <div className="bk-timecol">&nbsp;</div>
+        {weekDays.map((d, idx) => (
+          <div className="bk-dayhead" key={idx}>
+            <div className="dow">{formatDow(d)}</div>
+            <div className="md">{formatMonthDay(d)}</div>
           </div>
         ))}
       </div>
 
-      {/* grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, 1fr)' }}>
-        {ROWS.map((row, rIdx) => {
-          return (
-            <React.Fragment key={rIdx}>
-              {/* time label column */}
-              <div style={{ borderRight: '1px solid #0b1220', borderBottom: '1px solid #0b1220', padding: '8px 10px', color: '#9ca3af', fontSize: 12 }}>
-                {row.label}
+      {/* Scrollable grid */}
+      <div className="bk-viewport">
+        <div className="bk-grid">
+          {/* time labels column */}
+          <div className="bk-timecol">
+            {timeLabels.map((t, i) => (
+              <div className="bk-time" key={i}>
+                {formatTimeLabel(t)}
               </div>
-              {/* 7 day cells */}
-              {DAYS.map((day, cIdx) => {
-                const start = new Date(day);
-                start.setHours(Math.floor(row.minutes / 60), row.minutes % 60, 0, 0);
-                const key = cellKey(start);
-                const isBooked = bookedKeys.has(key);
+            ))}
+          </div>
 
-                const bg = isBooked ? '#7a1111' : '#0b3b2a';
-                const txt = isBooked ? 'Booked' : 'Open';
+          {/* 5 day columns */}
+          {weekDays.map((day, di) => {
+            return (
+              <div className="bk-daycol" key={di}>
+                {timeLabels.map((label, ri) => {
+                  const cellStart = new Date(
+                    day.getFullYear(),
+                    day.getMonth(),
+                    day.getDate(),
+                    label.getHours(),
+                    label.getMinutes(),
+                    0,
+                    0
+                  );
+                  // each visual cell = 30 min
+                  const cellEnd = addMinutes(cellStart, 30);
+                  const taken = isBusy(cellStart, cellEnd);
 
-                return (
-                  <button
-                    key={cIdx}
-                    onClick={() => {
-                      if (!isBooked) onPickSlot?.(start);
-                    }}
-                    disabled={isBooked}
-                    title={txt}
-                    style={{
-                      border: '1px solid #0b1220',
-                      borderLeft: 'none',
-                      borderTop: 'none',
-                      padding: 0,
-                      margin: 0,
-                      height: 44,
-                      background: bg,
-                      color: '#e5e7eb',
-                      cursor: isBooked ? 'not-allowed' : 'pointer',
-                      fontSize: 12,
-                    }}
-                  >
-                    {txt}
-                  </button>
-                );
-              })}
-            </React.Fragment>
-          );
-        })}
+                  return (
+                    <button
+                      key={ri}
+                      className={`bk-cell ${taken ? 'busy' : 'open'}`}
+                      type="button"
+                      disabled={taken}
+                      onClick={() => {
+                        if (taken) return;
+                        // When user taps a 30-min cell, we pass the START time.
+                        // Parent will combine with slotMinutes to create the booking.
+                        onPickSlot?.(cellStart);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* legend */}
-      <div style={{ padding: '8px 10px', color: '#9ca3af', fontSize: 12 }}>
-        Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
-      </div>
+      {loading && <div className="bk-loading">Loading…</div>}
     </div>
   );
 }
-
-const navBtn: React.CSSProperties = {
-  padding: '6px 10px',
-  borderRadius: 8,
-  border: '1px solid #0b1220',
-  background: '#0b0f1a',
-  color: '#e5e7eb',
-  cursor: 'pointer',
-  fontSize: 12,
-};
