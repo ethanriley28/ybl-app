@@ -14,7 +14,7 @@ export default function SchedulerPage() {
   const [athleteId, setAthleteId] = React.useState<string | null>(null);
   const [athleteName, setAthleteName] = React.useState<string | null>(null);
 
-  // --- date/time picked for booking (controlled; calendar fills these) ---
+  // --- date/time picked for booking (calendar fills these) ---
   const [dateStr, setDateStr] = React.useState<string>(() => {
     const t = new Date();
     const mm = String(t.getMonth() + 1).padStart(2, '0');
@@ -27,7 +27,7 @@ export default function SchedulerPage() {
   const [slotMinutes, setSlotMinutes] = React.useState<number>(30); // 30 or 60
   const [refreshKey, setRefreshKey] = React.useState<number>(0);
 
-  // Load athletes for the dropdown
+  // Load athletes
   React.useEffect(() => {
     let on = true;
     (async () => {
@@ -54,6 +54,7 @@ export default function SchedulerPage() {
       <TopBar />
 
       <main style={{ maxWidth: 1120, margin: '20px auto', padding: '0 16px' }}>
+        {/* Page title */}
         <h1 style={{ fontSize: 22, color: '#e5e7eb', marginBottom: 14 }}>Create a Booking</h1>
 
         {/* Athlete selector */}
@@ -100,15 +101,8 @@ export default function SchedulerPage() {
           )}
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 16,
-            alignItems: 'start',
-          }}
-        >
-          {/* Left: Form */}
+        {/* FORM CARD (full width) */}
+        <div style={{ marginBottom: 20 }}>
           <CreateBookingPanel
             athleteId={athleteId}
             athleteName={athleteName}
@@ -120,22 +114,25 @@ export default function SchedulerPage() {
             setSlotMinutes={setSlotMinutes}
             onBooked={() => setRefreshKey((x) => x + 1)}
           />
-
-          {/* Right: Week calendar (green open / red booked) */}
-          <BookingCalendar
-            slotMinutes={slotMinutes}
-            refreshKey={refreshKey}
-            onPickSlot={(startLocal) => {
-              const y = startLocal.getFullYear();
-              const m = String(startLocal.getMonth() + 1).padStart(2, '0');
-              const d = String(startLocal.getDate()).padStart(2, '0');
-              const hh = String(startLocal.getHours()).padStart(2, '0');
-              const mm = String(startLocal.getMinutes()).padStart(2, '0');
-              setDateStr(`${y}-${m}-${d}`);
-              setTimeStr(`${hh}:${mm}`);
-            }}
-          />
         </div>
+
+        {/* CALENDAR SECTION (full width under form) */}
+        <h2 style={{ fontSize: 16, color: '#e5e7eb', margin: '8px 0 10px' }}>See openings</h2>
+        <BookingCalendar
+          slotMinutes={slotMinutes}
+          refreshKey={refreshKey}
+          onPickSlot={(startLocal) => {
+            // Fill the form when clicking a green cell
+            const y = startLocal.getFullYear();
+            const m = String(startLocal.getMonth() + 1).padStart(2, '0');
+            const d = String(startLocal.getDate()).padStart(2, '0');
+            const hh = String(startLocal.getHours()).padStart(2, '0');
+            const mm = String(startLocal.getMinutes()).padStart(2, '0');
+            setDateStr(`${y}-${m}-${d}`);
+            setTimeStr(`${hh}:${mm}`);
+            // keep slotMinutes as user-set (30/60)
+          }}
+        />
 
         <div style={{ color: '#9ca3af', fontSize: 12, marginTop: 10 }}>
           Tip: click any <span style={{ color: '#16a34a' }}>green</span> slot to fill the form, then press{' '}
