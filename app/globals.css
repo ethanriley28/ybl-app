@@ -103,3 +103,12 @@ a { color: inherit; text-decoration: none; }
   .fc .fc-col-header-cell-cushion .fc-day-line-1{ font-size:15px; }
   .fc .fc-col-header-cell-cushion .fc-day-line-2{ font-size:13px; }
 }
+/* Keep native time/date controls inside their boxes */
+input[type="time"], input[type="date"] {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* iOS/Chromium picker icon stays inside the input */
+input::-webkit-calendar-picker-indicator { filter: invert(1); }
+
