@@ -64,7 +64,7 @@ export default function BookingCalendar({
     return () => { isMounted = false; };
   }, [startRange, endRange, refreshKey]);
 
-  // compute green "open" slots from weekly hours minus occupied
+  // compute "open" slots from weekly hours minus occupied
   const weekly = React.useMemo(() => parseWeekly(), []);
   const available = React.useMemo(() => {
     const out: { start: Date; end: Date }[] = [];
@@ -101,8 +101,8 @@ export default function BookingCalendar({
     start: s.start,
     end: s.end,
     title: 'Open',
-    classNames: ['open-slot'],     // colored via CSS in globals.css
-    display: 'block' as const,     // fill entire slot
+    classNames: ['open-slot'],
+    display: 'block' as const,
     overlap: false,
     extendedProps: { kind: 'open' as const },
   }));
@@ -117,9 +117,11 @@ export default function BookingCalendar({
     extendedProps: { kind: 'booked' as const },
   }));
 
+  const labelInterval = slotMinutes === 30 ? '00:30:00' : '01:00:00';
+  const slotDur       = slotMinutes === 30 ? '00:30:00' : '01:00:00';
+
   return (
     <div>
-      {/* minimal in-file tweaks; colors handled in globals.css */}
       {loading && <div style={{ color:'#94a3b8', padding: 8 }}>Loading…</div>}
       {err && <div style={{ color:'#fecaca', padding: 8 }}>Error: {err}</div>}
 
@@ -132,10 +134,12 @@ export default function BookingCalendar({
         slotMaxTime="20:30:00"               // 8:30 PM
         nowIndicator
         selectable={false}
-        slotDuration={slotMinutes === 60 ? '01:00:00' : '00:30:00'}
+        slotDuration={slotDur}
+        slotLabelInterval={labelInterval}
+        slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
         eventOrder="-start"
         headerToolbar={{ start: 'title', center: '', end: 'today prev,next' }}
-        // two-line header exactly like your screenshot
+        // two-line header (DAY on top, Month+Date below)
         dayHeaderContent={(arg) => {
           const d = arg.date;
           const top  = d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
@@ -151,7 +155,6 @@ export default function BookingCalendar({
           wrap.appendChild(l2);
           return { domNodes: [wrap] };
         }}
-        slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
         events={[...openEvents, ...bookedEvents]}
         eventContent={(arg) => {
           const kind = (arg.event.extendedProps as any)?.kind;
@@ -164,7 +167,6 @@ export default function BookingCalendar({
           return { domNodes: [el] };
         }}
         dateClick={(info) => {
-          // allow tapping a green background cell
           const step = slotMinutes;
           const d = new Date(info.date);
           const snapped = new Date(d);
