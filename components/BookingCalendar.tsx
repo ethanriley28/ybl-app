@@ -1,180 +1,156 @@
-// components/BookingCalendar.tsx
 'use client';
 
-import * as React from 'react';
-import FullCalendar from '@fullcalendar/react';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import interactionPlugin from '@fullcalendar/interaction';
-
-type Occupied = { start: string; end: string };
+import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 type Props = {
-  slotMinutes: number;            // 30 or 60
-  daysAhead?: number;             // default 21
-  refreshKey?: number;            // bump to refetch after booking
-  onPickSlot?: (start: Date) => void;
+  slotMinutes: number;                         // 30 or 60
+  onPickSlot?: (startLocal: Date) => void;     // fills the form when user taps "Open"
 };
 
-function addMinutes(d: Date, mins: number) { return new Date(d.getTime() + mins * 60000); }
-function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
-  return aStart < bEnd && bStart < aEnd;
+type Row = { start_ts: string; end_ts: string };
+
+const HOURS = [17, 17.5, 18, 18.5, 19, 19.5, 20]; // 5:00p .. 8:00p half hours
+
+function startOfWeekLocal(d: Date) {
+  const x = new Date(d);
+  const dow = x.getDay(); // 0=Sun
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - dow);
+  return x;
 }
-function parseWeekly(): Record<string, [string, string][]> {
-  try {
-    const raw = process.env.NEXT_PUBLIC_COACH_WEEKLY_HOURS as string | undefined;
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function fmtDayHeader(d: Date) {
+  const day = d.toLocaleDateString(undefined, { weekday: 'short' });
+  const m = d.toLocaleDateString(undefined, { month: 'short' });
+  const dd = d.getDate();
+  return { day, m, dd };
+}
+function timePartsToDate(base: Date, hourFrac: number) {
+  const h = Math.floor(hourFrac);
+  const m = hourFrac % 1 ? 30 : 0;
+  const x = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0);
+  return x;
 }
 
-export default function BookingCalendar({
-  slotMinutes,
-  daysAhead = 21,
-  refreshKey,
-  onPickSlot,
-}: Props) {
-  const [occupied, setOccupied] = React.useState<Occupied[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [err, setErr] = React.useState<string | null>(null);
+export default function BookingCalendar({ slotMinutes, onPickSlot }: Props) {
+  const [viewDate, setViewDate] = useState<Date>(() => new Date());
+  const [rows, setRows] = useState<Row[]>([]);
 
-  const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + daysAhead); return d; }, [daysAhead]);
+  const weekStart = useMemo(() => startOfWeekLocal(viewDate), [viewDate]);
+  const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
-  // fetch occupied
-  React.useEffect(() => {
-    let on = true;
-    (async () => {
-      setLoading(true); setErr(null);
-      try {
-        const from = startRange.toISOString();
-        const to   = endRange.toISOString();
-        const res  = await fetch(`/api/bookings/occupied?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cache: 'no-store' });
-        const j    = await res.json();
-        if (!j.ok) throw new Error(j.error || 'failed');
-        if (on) setOccupied(j.occupied || []);
-      } catch (e: any) {
-        if (on) setErr(e?.message || 'Could not load calendar');
-      } finally { if (on) setLoading(false); }
-    })();
-    return () => { on = false; };
-  }, [startRange, endRange, refreshKey]);
+  // Fetch bookings that start within this week (simple & fast)
+  useEffect(() => {
+    const fetcher = async () => {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('start_ts,end_ts')
+        .gte('start_ts', weekStart.toISOString())
+        .lt('start_ts', weekEnd.toISOString());
 
-  // compute available
-  const weekly = React.useMemo(() => parseWeekly(), []);
-  const available = React.useMemo(() => {
-    const out: { start: Date; end: Date }[] = [];
-    const now = new Date();
-    const occ = occupied.map(o => ({ s: new Date(o.start), e: new Date(o.end) }));
-    const cur = new Date(startRange);
+      if (!error && data) setRows(data as Row[]);
+    };
+    fetcher();
+  }, [weekStart, weekEnd]);
 
-    while (cur < endRange) {
-      const day = ['sun','mon','tue','wed','thu','fri','sat'][cur.getDay()];
-      const windows = (weekly[day] || []) as [string, string][];
-
-      windows.forEach(([from, to]) => {
-        const [fh,fm] = from.split(':').map(Number);
-        const [th,tm] = to.split(':').map(Number);
-        const winStart = new Date(cur); winStart.setHours(fh, fm, 0, 0);
-        const winEnd   = new Date(cur); winEnd.setHours(th, tm, 0, 0);
-
-        for (let t = new Date(winStart); addMinutes(t, slotMinutes) <= winEnd; t = addMinutes(t, slotMinutes)) {
-          const s = new Date(t);
-          const e = addMinutes(s, slotMinutes);
-          if (s <= now) continue;
-          if (!occ.some(o => overlaps(s, e, o.s, o.e))) out.push({ start: s, end: e });
-        }
-      });
-
-      cur.setDate(cur.getDate() + 1);
+  function isBooked(slotStartLocal: Date, slotEndLocal: Date) {
+    for (const r of rows) {
+      const bStart = new Date(r.start_ts); // interpreted as the correct instant, in local zone
+      const bEnd = new Date(r.end_ts);
+      if (bStart < slotEndLocal && bEnd > slotStartLocal) return true; // overlap
     }
+    return false;
+  }
 
-    return out.sort((a,b) => a.start.getTime() - b.start.getTime());
-  }, [occupied, weekly, slotMinutes, startRange, endRange]);
-
-  // events
-  const openEvents = available.map(s => ({
-    start: s.start, end: s.end,
-    title: 'Open', classNames: ['open-slot'], display: 'block' as const,
-    overlap: false, extendedProps: { kind: 'open' as const },
-  }));
-  const bookedEvents = occupied.map(o => ({
-    start: new Date(o.start), end: new Date(o.end),
-    title: 'Booked', classNames: ['booked-slot'], display: 'block' as const,
-    overlap: false, extendedProps: { kind: 'booked' as const },
-  }));
-
-  const labelInterval = slotMinutes === 30 ? '00:30:00' : '01:00:00';
-  const slotDur       = slotMinutes === 30 ? '00:30:00' : '01:00:00';
+  const headerStyle: React.CSSProperties = {
+    padding: '8px 10px',
+    borderRight: '1px solid #0b1220',
+    color: '#cbd5e1',
+    textAlign: 'center',
+  };
+  const cellStyle: React.CSSProperties = {
+    height: 42,
+    borderRight: '1px solid #0b1220',
+    borderTop: '1px solid #0b1220',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 12,
+    cursor: 'pointer',
+  };
 
   return (
-    <div>
-      {loading && <div style={{ color:'#94a3b8', padding: 8 }}>Loading…</div>}
-      {err && <div style={{ color:'#fecaca', padding: 8 }}>Error: {err}</div>}
+    <div style={{ border: '1px solid #0b1220', borderRadius: 12, overflow: 'hidden', background: '#050a12' }}>
+      {/* Nav */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: 8 }}>
+        <button onClick={() => setViewDate(new Date())} style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #0b1220', background: '#0b0b0b', color: '#e5e7eb' }}>today</button>
+        <button onClick={() => setViewDate(addDays(viewDate, -7))} style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #0b1220', background: '#0b0b0b', color: '#e5e7eb' }}>{'<'}</button>
+        <button onClick={() => setViewDate(addDays(viewDate, +7))} style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #0b1220', background: '#0b0b0b', color: '#e5e7eb' }}>{'>'}</button>
+      </div>
 
-      <FullCalendar
-        plugins={[timeGridPlugin, interactionPlugin]}
-        initialView="timeGridWeek"
-        height="auto"
-        allDaySlot={false}
-        slotMinTime="17:00:00"
-        slotMaxTime="20:30:00"
-        nowIndicator
-        selectable={false}
-        eventOverlap={false}             // UI: don’t stack events
-        slotDuration={slotDur}
-        slotLabelInterval={labelInterval}
-        slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
-        eventOrder="-start"
-        headerToolbar={{ start: 'title', center: '', end: 'today prev,next' }}
+      {/* Header row (time column + 7 day columns) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '90px repeat(7, 1fr)' }}>
+        <div style={{ ...headerStyle, textAlign: 'left' }} />
+        {days.map((d) => {
+          const { day, m, dd } = fmtDayHeader(d);
+          return (
+            <div key={d.toDateString()} style={headerStyle}>
+              <div style={{ fontWeight: 700 }}>{day}</div>
+              <div style={{ fontSize: 12, color: '#93a4b8' }}>{m} {dd}</div>
+            </div>
+          );
+        })}
+      </div>
 
-        // Force TWO-LINE header with inline styles so it never collapses
-        dayHeaderContent={(arg) => {
-          const d = arg.date;
-          const top  = d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
-          const bot  = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); // Aug 25
-          const wrap = document.createElement('div');
-          wrap.style.display = 'flex';
-          wrap.style.flexDirection = 'column';
-          wrap.style.alignItems = 'center';
-          wrap.style.justifyContent = 'center';
+      {/* Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '90px repeat(7, 1fr)' }}>
+        {HOURS.map((hourFrac) => {
+          const labelH = Math.floor(hourFrac);
+          const labelM = hourFrac % 1 ? ':30' : ':00';
+          return (
+            <React.Fragment key={hourFrac}>
+              {/* left time label */}
+              <div style={{ ...cellStyle, justifyContent: 'flex-end', paddingRight: 8, fontFamily: 'monospace' }}>
+                {labelH > 12 ? labelH - 12 : labelH}{labelM} PM
+              </div>
 
-          const l1 = document.createElement('span');
-          l1.textContent = top;
-          l1.style.fontWeight = '800';
-          l1.style.fontSize = '16px';
+              {/* seven day cells */}
+              {days.map((d) => {
+                const slotStartLocal = timePartsToDate(d, hourFrac);
+                const slotEndLocal = new Date(slotStartLocal.getTime() + slotMinutes * 60_000);
+                const booked = isBooked(slotStartLocal, slotEndLocal);
 
-          const l2 = document.createElement('span');
-          l2.textContent = bot;
-          l2.style.fontWeight = '700';
-          l2.style.fontSize = '14px';
-          l2.style.color = '#9ca3af';
+                return (
+                  <div
+                    key={d.toDateString() + hourFrac}
+                    style={{
+                      ...cellStyle,
+                      background: booked ? '#7f1d1d' : '#0f3b33',
+                      color: '#e5e7eb',
+                    }}
+                    onClick={() => {
+                      if (booked) return;
+                      onPickSlot?.(slotStartLocal);
+                    }}
+                  >
+                    {booked ? 'Booked' : 'Open'}
+                  </div>
+                );
+              })}
+            </React.Fragment>
+          );
+        })}
+      </div>
 
-          wrap.appendChild(l1);
-          wrap.appendChild(l2);
-          return { domNodes: [wrap] };
-        }}
-
-        events={[...openEvents, ...bookedEvents]}
-
-        eventContent={(arg) => {
-          const kind = (arg.event.extendedProps as any)?.kind;
-          const label = kind === 'booked' ? 'Booked' : 'Open';
-          const el = document.createElement('div');
-          el.style.fontWeight = '800';
-          el.style.fontSize = '12px';
-          el.style.padding = '2px 6px';
-          el.textContent = label;
-          return { domNodes: [el] };
-        }}
-
-        dateClick={(info) => {
-          // Clicking blank grid does nothing (we only allow event clicks)
-        }}
-
-        eventClick={(info) => {
-          const kind = (info.event.extendedProps as any)?.kind;
-          if (kind === 'open' && info.event.start) onPickSlot?.(info.event.start);
-        }}
-      />
+      <div style={{ padding: '8px 10px', fontSize: 12, color: '#93a4b8' }}>
+        Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
+      </div>
     </div>
   );
 }

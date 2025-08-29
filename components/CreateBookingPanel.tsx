@@ -1,191 +1,207 @@
-// components/CreateBookingPanel.tsx
 'use client';
 
-import * as React from 'react';
+import React, { useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+/**
+ * Props:
+ * - athleteId, athleteName come from the selected athlete dropdown
+ * - onBooked is called after a successful insert so the calendar can refetch
+ */
 type Props = {
   athleteId: string | null;
   athleteName: string | null;
-  slotMinutes: number;
-  setSlotMinutes: (m: number) => void;
-  onBooked: () => void; // refresh calendar
+  onBooked?: () => void;
 };
 
-function pad(n: number) { return String(n).padStart(2, '0'); }
-function todayISO() {
-  const d = new Date(); d.setHours(0,0,0,0);
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
 }
 
-export default function CreateBookingPanel({
-  athleteId,
-  athleteName,
-  slotMinutes,
-  setSlotMinutes,
-  onBooked,
-}: Props) {
-  const [date, setDate] = React.useState<string>(todayISO());
-  const [time, setTime] = React.useState<string>('17:00'); // 5:00 PM default
-  const [note, setNote] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
+/** Build a UTC ISO string from local date+time strings */
+function toUTCISO(dateStr: string, timeStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const [hh, mm] = timeStr.split(':').map(Number);
+  const local = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+  return local.toISOString(); // -> correct UTC moment (with Z)
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    if (!athleteId || !athleteName) {
-      setMsg('Pick an athlete first.'); return;
+/** Add minutes to a UTC/local Date and return ISO (we pass a Date object in local time) */
+function addMinutesISO(local: Date, minutes: number): string {
+  return new Date(local.getTime() + minutes * 60_000).toISOString();
+}
+
+export default function CreateBookingPanel({ athleteId, athleteName, onBooked }: Props) {
+  // default to today's local date and 17:00
+  const todayLocal = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+  }, []);
+
+  const [dateStr, setDateStr] = useState<string>(todayLocal);
+  const [timeStr, setTimeStr] = useState<string>('17:00');
+  const [slotMinutes, setSlotMinutes] = useState<number>(30);
+  const [note, setNote] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string>('');
+
+  async function handleAdd() {
+    setMsg('');
+    if (!athleteId) {
+      setMsg('Pick an athlete first.');
+      return;
     }
-
-    // build start/end
-    const [hh, mm] = time.split(':').map(Number);
-    const y = Number(date.slice(0, 4));
-    const m = Number(date.slice(5, 7)) - 1;
-    const d = Number(date.slice(8, 10));
-    const start = new Date(y, m, d, hh, mm, 0, 0);
-    const end = new Date(start.getTime() + slotMinutes * 60000);
-    const startISO = start.toISOString();
-    const endISO = end.toISOString();
-
+    setSaving(true);
     try {
-      setBusy(true);
+      // 1) Build UTC ISO times from LOCAL pickers
+      const startLocal = (() => {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const [hh, mm] = timeStr.split(':').map(Number);
+        return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+      })();
+      const startISO = startLocal.toISOString();
+      const endISO = addMinutesISO(startLocal, slotMinutes);
 
-      // 1) PREVENT OVERLAPS (server query): start < newEnd AND end > newStart
-      const { data: conflicts, error: conflictErr } = await supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: false })
-        .lt('start_ts', endISO)
-        .gt('end_ts', startISO)
-        .limit(1);
-
-      if (conflictErr) throw conflictErr;
-      if ((conflicts?.length ?? 0) > 0) {
+      // 2) Check for overlap on the server (UTC→UTC comparison)
+      const conflictRes = await fetch('/api/bookings/conflict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startISO, endISO }),
+      });
+      const conflictJson = await conflictRes.json().catch(() => ({} as any));
+      if (!conflictRes.ok || !conflictJson?.ok) {
+        setMsg(conflictJson?.error || 'Could not check availability.');
+        return;
+      }
+      if (conflictJson.conflict) {
         setMsg('That time is already booked. Pick another slot.');
         return;
       }
 
-      // 2) INSERT
-      const user = await supabase.auth.getUser();
-      const user_id = user.data.user?.id ?? null;
-
-      const { error } = await supabase.from('bookings').insert({
-        user_id,
+      // 3) Insert booking
+      const user = (await supabase.auth.getUser()).data.user;
+      const { error: insErr } = await supabase.from('bookings').insert({
+        user_id: user?.id ?? null,
         athlete_id: athleteId,
         athlete_name: athleteName,
-        start_ts: startISO,
-        end_ts: endISO,
+        start_ts: startISO, // timestamptz in DB
+        end_ts: endISO,     // timestamptz in DB
         note: note || null,
       });
 
-      if (error) throw error;
+      if (insErr) {
+        setMsg(insErr.message || 'Insert failed.');
+        return;
+      }
 
       setMsg('Booked!');
-      // let Postgres commit & read back
-      setTimeout(() => onBooked(), 250);
-    } catch (err: any) {
-      setMsg(err?.message || 'Could not add booking');
+      setNote('');
+      if (onBooked) onBooked();
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
-  const btn = (m: number, label: string) => (
-    <button
-      type="button"
-      onClick={() => setSlotMinutes(m)}
-      style={{
-        padding: '12px 14px',
-        borderRadius: 10,
-        border: '1px solid #222',
-        background: slotMinutes === m ? '#111' : '#0b0b0b',
-        color: '#e5e7eb',
-        fontWeight: 800,
-        width: 180
-      }}
-    >
-      {label}
-    </button>
-  );
-
-  const fieldWrap: React.CSSProperties = {
-    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14,
-  };
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%', maxWidth: '100%', boxSizing: 'border-box',
-    padding: '12px 14px', borderRadius: 10,
-    border: '1px solid #222', background: '#0f172a', color: '#e5e7eb',
-    fontWeight: 700, outline: 'none'
+  const inputBase: React.CSSProperties = {
+    width: 220,
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: '1px solid #0f172a',
+    background: '#0b0f1a',
+    color: '#e5e7eb',
+    outline: 'none',
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{
-      border: '1px solid #1f2937',
-      borderRadius: 12,
-      background: '#0b0b0b',
-      padding: 16,
-      marginTop: 12,
-      overflow: 'hidden' // keep children inside
-    }}>
-      <div style={{ fontWeight: 800, marginBottom: 10, fontSize: 18 }}>Create Booking</div>
-
-      {/* Date + Time */}
-      <div style={fieldWrap}>
+    <div
+      style={{
+        border: '1px solid #0b1220',
+        borderRadius: 12,
+        padding: 14,
+        background: '#050a12',
+      }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {/* Date */}
         <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: 12, color: '#9ca3af' }}>Date</span>
+          <span style={{ fontSize: 12, color: '#93a4b8' }}>Date</span>
           <input
             type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={inputStyle}
+            value={dateStr}
+            onChange={(e) => setDateStr(e.target.value)}
+            style={inputBase}
           />
         </label>
 
+        {/* Time */}
         <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: 12, color: '#9ca3af' }}>Time</span>
+          <span style={{ fontSize: 12, color: '#93a4b8' }}>Time</span>
           <input
             type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            step={60 * 30}
-            style={inputStyle}
+            value={timeStr}
+            onChange={(e) => setTimeStr(e.target.value)}
+            step={1800} // 30-minute picker steps
+            style={inputBase}
+          />
+        </label>
+
+        {/* Length buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => setSlotMinutes(30)}
+            style={{
+              ...inputBase,
+              width: 160,
+              cursor: 'pointer',
+              background: slotMinutes === 30 ? '#0b3b2a' : '#0b0f1a',
+              border: slotMinutes === 30 ? '1px solid #1f6b53' : inputBase.border,
+            }}
+          >
+            30 minutes
+          </button>
+          <button
+            onClick={() => setSlotMinutes(60)}
+            style={{
+              ...inputBase,
+              width: 160,
+              cursor: 'pointer',
+              background: slotMinutes === 60 ? '#0b3b2a' : '#0b0f1a',
+              border: slotMinutes === 60 ? '1px solid #1f6b53' : inputBase.border,
+            }}
+          >
+            60 minutes
+          </button>
+        </div>
+
+        {/* Note */}
+        <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
+          <span style={{ fontSize: 12, color: '#93a4b8' }}>Note (optional)</span>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g., focus on hitting / fielding"
+            style={{ ...inputBase, width: '100%' }}
           />
         </label>
       </div>
 
-      {/* Durations */}
-      <div style={{ display: 'flex', gap: 12, margin: '12px 0' }}>
-        {btn(30, '30 minutes')}
-        {btn(60, '60 minutes')}
-      </div>
-
-      {/* Note */}
-      <label style={{ display: 'grid', gap: 6 }}>
-        <span style={{ fontSize: 12, color: '#9ca3af' }}>Note (optional)</span>
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g., focus on hitting / fielding"
-          style={inputStyle}
-        />
-      </label>
-
-      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
         <button
-          type="submit"
-          disabled={!athleteId || busy}
+          onClick={handleAdd}
+          disabled={saving}
           style={{
-            padding: '12px 16px', borderRadius: 10,
-            background: '#111', border: '1px solid #111',
-            color: '#fff', fontWeight: 800, cursor: 'pointer',
-            opacity: (!athleteId || busy) ? .6 : 1
+            padding: '10px 14px',
+            borderRadius: 10,
+            border: '1px solid #0f172a',
+            background: '#0b0b0b',
+            color: '#fff',
+            cursor: 'pointer',
           }}
         >
-          {busy ? 'Adding…' : 'Add Booking'}
+          {saving ? 'Saving…' : 'Add Booking'}
         </button>
-        {msg && <span style={{ color: '#9ca3af', fontSize: 14 }}>{msg}</span>}
+        {msg && <div style={{ fontSize: 13, color: msg === 'Booked!' ? '#16a34a' : '#ef4444' }}>{msg}</div>}
       </div>
-    </form>
+    </div>
   );
 }
