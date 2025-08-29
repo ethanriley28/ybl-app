@@ -111,4 +111,27 @@ input[type="time"], input[type="date"] {
 
 /* iOS/Chromium picker icon stays inside the input */
 input::-webkit-calendar-picker-indicator { filter: invert(1); }
+/* ====== Scheduler mobile polish (does not affect desktop) ====== */
+@media (max-width: 640px) {
+  /* card spacing a bit tighter on phones */
+  .ert-card { padding: 12px !important; border-radius: 12px !important; }
+
+  /* stack date/time vertically */
+  .ert-create .ert-create-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* full-width note + button */
+  .ert-create .note-input { width: 100% !important; }
+  .ert-create .add-btn { width: 100% !important; }
+
+  /* calendar: slightly smaller type, tighter cells */
+  .ert-cal table { font-size: 12px; }
+  .ert-cal .dayHeader .dow { font-size: 13px; }
+  .ert-cal .dayHeader .md  { font-size: 11px; opacity: .85; }
+  .ert-cal .timeCol { width: 64px; font-size: 11px; }
+  .ert-cal .cell { padding: 6px 4px; }
+}
 

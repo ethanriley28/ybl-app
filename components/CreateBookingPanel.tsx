@@ -1,48 +1,46 @@
 'use client';
 
-import React from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import * as React from 'react';
 
 type Props = {
   athleteId: string | null;
   athleteName: string | null;
-
-  // controlled date/time from parent (calendar sets these)
-  dateStr: string;                            // "YYYY-MM-DD"
-  timeStr: string;                            // "HH:MM"
-  setDateStr: React.Dispatch<React.SetStateAction<string>>;
-  setTimeStr: React.Dispatch<React.SetStateAction<string>>;
-
-  // slot length and setter (keeps calendar + form in sync)
-  slotMinutes: number;                        // 30 or 60
-  setSlotMinutes: React.Dispatch<React.SetStateAction<number>>;
-
-  // after a successful insert
-  onBooked?: () => void;
+  dateStr: string;
+  timeStr: string;
+  setDateStr: (v: string) => void;
+  setTimeStr: (v: string) => void;
+  slotMinutes: number;
+  setSlotMinutes: (n: number) => void;
+  onBooked: () => void;
 };
 
-function addMinutesISO(local: Date, minutes: number): string {
-  return new Date(local.getTime() + minutes * 60_000).toISOString();
-}
+export default function CreateBookingPanel(props: Props) {
+  const {
+    athleteId,
+    athleteName,
+    dateStr,
+    timeStr,
+    setDateStr,
+    setTimeStr,
+    slotMinutes,
+    setSlotMinutes,
+    onBooked,
+  } = props;
 
-export default function CreateBookingPanel({
-  athleteId,
-  athleteName,
-  dateStr,
-  timeStr,
-  setDateStr,
-  setTimeStr,
-  slotMinutes,
-  setSlotMinutes,
-  onBooked,
-}: Props) {
-  const [note, setNote] = React.useState<string>('');
+  const [note, setNote] = React.useState('');
   const [saving, setSaving] = React.useState(false);
-  const [msg, setMsg] = React.useState<string>('');
+  const [msg, setMsg] = React.useState<string | null>(null);
 
-  async function handleAdd() {
-    setMsg('');
-    if (!athleteId) {
+  function addMinutes(d: Date, n: number) {
+    const nd = new Date(d);
+    nd.setMinutes(nd.getMinutes() + n);
+    return nd;
+  }
+
+  async function handleCreate() {
+    setMsg(null);
+
+    if (!athleteId || !athleteName) {
       setMsg('Pick an athlete first.');
       return;
     }
@@ -51,146 +49,179 @@ export default function CreateBookingPanel({
       return;
     }
 
-    setSaving(true);
-    try {
-      // Build UTC from LOCAL date/time (prevents off-by-one-day issues)
-      const [y, m, d] = dateStr.split('-').map(Number);
-      const [hh, mm] = timeStr.split(':').map(Number);
-      const startLocal = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
-      const startISO = startLocal.toISOString();
-      const endISO = addMinutesISO(startLocal, slotMinutes);
+    // local -> ISO
+    const [hh, mm] = timeStr.split(':').map((x) => parseInt(x, 10));
+    const [y, m, d] = dateStr.split('-').map((x) => parseInt(x, 10));
+    const startLocal = new Date(y, m - 1, d, hh, mm, 0, 0);
+    const endLocal = addMinutes(startLocal, slotMinutes);
 
-      // 1) Conflict check
-      const r = await fetch('/api/bookings/conflict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startISO, endISO }),
-      });
-      const j = await r.json().catch(() => ({} as any));
-      if (!r.ok || !j?.ok) {
-        setMsg(j?.error || 'Could not check availability.');
-        return;
-      }
-      if (j.conflict) {
+    const startISO = new Date(
+      startLocal.getTime() - startLocal.getTimezoneOffset() * 60000
+    ).toISOString();
+    const endISO = new Date(
+      endLocal.getTime() - endLocal.getTimezoneOffset() * 60000
+    ).toISOString();
+
+    try {
+      setSaving(true);
+
+      // 1) conflict check (server uses UTC)
+      const conflictRes = await fetch(
+        `/api/bookings/conflict?start=${encodeURIComponent(
+          startISO
+        )}&end=${encodeURIComponent(endISO)}`
+      );
+      const conflict = await conflictRes.json();
+      if (conflict?.conflict) {
         setMsg('That time is already booked. Pick another slot.');
         return;
       }
 
-      // 2) Insert booking
-      const user = (await supabase.auth.getUser()).data.user;
-      const { error } = await supabase.from('bookings').insert({
-        user_id: user?.id ?? null,
-        athlete_id: athleteId,
-        athlete_name: athleteName,
-        start_ts: startISO,
-        end_ts: endISO,
-        note: note || null,
+      // 2) create
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: athleteId,
+          athlete_name: athleteName,
+          start_ts: startISO,
+          end_ts: endISO,
+          note,
+        }),
       });
-      if (error) {
-        setMsg(error.message || 'Insert failed.');
+
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        setMsg(json?.error || 'Could not create booking.');
         return;
       }
 
       setMsg('Booked!');
       setNote('');
-      onBooked?.();
+      onBooked(); // tells the calendar to re-fetch
+      setTimeout(() => setMsg(null), 2000);
+    } catch (e: any) {
+      setMsg(e?.message || 'Network error.');
     } finally {
       setSaving(false);
     }
   }
 
-  const inputBase: React.CSSProperties = {
-    width: 220,
+  const cardStyle: React.CSSProperties = {
+    border: '1px solid #0f172a',
+    background: '#0b0f1a',
+    borderRadius: 14,
+    padding: 16,
+  };
+
+  const label: React.CSSProperties = { color: '#93a4b8', fontSize: 12 };
+  const input: React.CSSProperties = {
+    width: '100%',
     padding: '12px 14px',
     borderRadius: 10,
-    border: '1px solid #0f172a',
+    border: '1px solid #111827',
     background: '#0b0f1a',
     color: '#e5e7eb',
     outline: 'none',
   };
 
   return (
-    <div style={{ border: '1px solid #0b1220', borderRadius: 12, padding: 14, background: '#050a12' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {/* Date */}
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: 12, color: '#93a4b8' }}>Date</span>
+    <div className="ert-card ert-create" style={cardStyle}>
+      {/* Date + Time in a 2-col layout that collapses on mobile */}
+      <div className="ert-create-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div>
+          <div style={label}>Date</div>
           <input
             type="date"
             value={dateStr}
             onChange={(e) => setDateStr(e.target.value)}
-            style={inputBase}
+            style={input}
           />
-        </label>
+        </div>
 
-        {/* Time */}
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ fontSize: 12, color: '#93a4b8' }}>Time</span>
+        <div>
+          <div style={label}>Time</div>
           <input
             type="time"
             value={timeStr}
-            onChange={(e) => setTimeStr(e.target.value)}
             step={1800}
-            style={inputBase}
+            onChange={(e) => setTimeStr(e.target.value)}
+            style={input}
           />
-        </label>
+        </div>
 
-        {/* Length buttons */}
+        {/* duration buttons */}
         <div style={{ display: 'flex', gap: 10 }}>
           <button
+            type="button"
             onClick={() => setSlotMinutes(30)}
+            className="ert-btn"
             style={{
-              ...inputBase,
-              width: 160,
+              flex: 1,
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: '1px solid #111827',
+              background: slotMinutes === 30 ? '#134e4a' : '#0b0f1a',
+              color: '#e5e7eb',
               cursor: 'pointer',
-              background: slotMinutes === 30 ? '#0b3b2a' : '#0b0f1a',
-              border: slotMinutes === 30 ? '1px solid #1f6b53' : inputBase.border,
             }}
           >
             30 minutes
           </button>
           <button
+            type="button"
             onClick={() => setSlotMinutes(60)}
+            className="ert-btn"
             style={{
-              ...inputBase,
-              width: 160,
+              flex: 1,
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: '1px solid #111827',
+              background: slotMinutes === 60 ? '#134e4a' : '#0b0f1a',
+              color: '#e5e7eb',
               cursor: 'pointer',
-              background: slotMinutes === 60 ? '#0b3b2a' : '#0b0f1a',
-              border: slotMinutes === 60 ? '1px solid #1f6b53' : inputBase.border,
             }}
           >
             60 minutes
           </button>
         </div>
 
-        {/* Note */}
-        <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
-          <span style={{ fontSize: 12, color: '#93a4b8' }}>Note (optional)</span>
+        {/* note */}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <div style={label}>Note (optional)</div>
           <input
+            className="note-input"
+            placeholder="e.g., focus on hitting / fielding"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g., focus on hitting / fielding"
-            style={{ ...inputBase, width: '100%' }}
+            style={input}
           />
-        </label>
-      </div>
+        </div>
 
-      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button
-          onClick={handleAdd}
-          disabled={saving}
-          style={{
-            padding: '10px 14px',
-            borderRadius: 10,
-            border: '1px solid #0f172a',
-            background: '#0b0b0b',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          {saving ? 'Saving…' : 'Add Booking'}
-        </button>
-        {msg && <div style={{ fontSize: 13, color: msg === 'Booked!' ? '#16a34a' : '#ef4444' }}>{msg}</div>}
+        {/* submit */}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={saving}
+            className="add-btn"
+            style={{
+              padding: '12px 16px',
+              borderRadius: 10,
+              background: '#111827',
+              color: '#e5e7eb',
+              border: '1px solid #1f2937',
+              cursor: 'pointer',
+            }}
+          >
+            {saving ? 'Saving…' : 'Add Booking'}
+          </button>
+          {msg && (
+            <div style={{ color: msg === 'Booked!' ? '#22c55e' : '#f87171', marginTop: 8, fontSize: 14 }}>
+              {msg}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -118,21 +118,21 @@ export default function SchedulerPage() {
 
         {/* CALENDAR SECTION (full width under form) */}
         <h2 style={{ fontSize: 16, color: '#e5e7eb', margin: '8px 0 10px' }}>See openings</h2>
-        <BookingCalendar
-          slotMinutes={slotMinutes}
-          refreshKey={refreshKey}
-          onPickSlot={(startLocal) => {
-            // Fill the form when clicking a green cell
-            const y = startLocal.getFullYear();
-            const m = String(startLocal.getMonth() + 1).padStart(2, '0');
-            const d = String(startLocal.getDate()).padStart(2, '0');
-            const hh = String(startLocal.getHours()).padStart(2, '0');
-            const mm = String(startLocal.getMinutes()).padStart(2, '0');
-            setDateStr(`${y}-${m}-${d}`);
-            setTimeStr(`${hh}:${mm}`);
-            // keep slotMinutes as user-set (30/60)
-          }}
-        />
+<div className="ert-cal">
+  <BookingCalendar
+    slotMinutes={slotMinutes}
+    refreshKey={refreshKey}
+    onPickSlot={(startLocal) => {
+      const y = startLocal.getFullYear();
+      const m = String(startLocal.getMonth() + 1).padStart(2, '0');
+      const d = String(startLocal.getDate()).padStart(2, '0');
+      const hh = String(startLocal.getHours()).padStart(2, '0');
+      const mm = String(startLocal.getMinutes()).padStart(2, '0');
+      setDateStr(`${y}-${m}-${d}`);
+      setTimeStr(`${hh}:${mm}`);
+    }}
+  />
+</div>
 
         <div style={{ color: '#9ca3af', fontSize: 12, marginTop: 10 }}>
           Tip: click any <span style={{ color: '#16a34a' }}>green</span> slot to fill the form, then press{' '}
