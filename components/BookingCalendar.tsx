@@ -9,9 +9,9 @@ import interactionPlugin from '@fullcalendar/interaction';
 type Occupied = { start: string; end: string };
 
 type Props = {
-  slotMinutes: number;
-  daysAhead?: number;
-  refreshKey?: number;            // when this changes, we refetch
+  slotMinutes: number;      // 30 or 60
+  daysAhead?: number;       // how many days to show
+  refreshKey?: number;      // refetch when this changes
   onPickSlot?: (start: Date) => void;
 };
 
@@ -41,9 +41,9 @@ export default function BookingCalendar({
   const [err, setErr] = React.useState<string | null>(null);
 
   const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+daysAhead); return d; }, [daysAhead]);
+  const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + daysAhead); return d; }, [daysAhead]);
 
-  // Fetch occupied whenever range OR refreshKey changes
+  // Fetch occupied when range or refreshKey changes
   React.useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -51,8 +51,11 @@ export default function BookingCalendar({
       try {
         const from = startRange.toISOString();
         const to   = endRange.toISOString();
-        const res  = await fetch(`/api/bookings/occupied?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cache: 'no-store' });
-        const j    = await res.json();
+        const res  = await fetch(
+          `/api/bookings/occupied?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+          { cache: 'no-store' }
+        );
+        const j = await res.json();
         if (!j.ok) throw new Error(j.error || 'failed');
         if (isMounted) setOccupied(j.occupied || []);
       } catch (e: any) {
@@ -64,7 +67,7 @@ export default function BookingCalendar({
     return () => { isMounted = false; };
   }, [startRange, endRange, refreshKey]);
 
-  // Build available slots (green background) from weekly hours
+  // Build "open" slots from weekly hours, subtracting occupied slots
   const weekly = React.useMemo(() => parseWeekly(), []);
   const available = React.useMemo(() => {
     const out: { start: Date; end: Date }[] = [];
@@ -96,12 +99,31 @@ export default function BookingCalendar({
     return out.sort((a,b) => a.start.getTime() - b.start.getTime());
   }, [occupied, weekly, slotMinutes, startRange, endRange]);
 
-  // Events: red = booked, green background = available
-  const takenEvents = occupied.map(o => ({
-    start: o.start, end: o.end, title: 'Booked', color: '#dc2626'
+  // Events for the calendar:
+  // - Red "Booked" blocks for occupied
+  // - Green "Open" blocks for available (click to choose)
+  const bookedEvents = occupied.map(o => ({
+    start: new Date(o.start),
+    end: new Date(o.end),
+    title: 'Booked',
+    backgroundColor: '#dc2626',
+    borderColor: '#b91c1c',
+    textColor: '#ffffff',
+    display: 'block' as const,
+    overlap: false,
+    extendedProps: { kind: 'booked' as const },
   }));
-  const availableBg = available.slice(0, 500).map(s => ({
-    start: s.start.toISOString(), end: s.end.toISOString(), display: 'background' as const, color: 'rgba(34,197,94,.15)'
+
+  const openEvents = available.slice(0, 600).map(s => ({
+    start: s.start,
+    end: s.end,
+    title: 'Open',
+    backgroundColor: 'rgba(34,197,94,.35)', // green
+    borderColor: '#16a34a',
+    textColor: '#bbf7d0',
+    display: 'block' as const,
+    overlap: false,
+    extendedProps: { kind: 'open' as const },
   }));
 
   return (
@@ -113,20 +135,38 @@ export default function BookingCalendar({
         initialView="timeGridWeek"
         height="auto"
         allDaySlot={false}
-        slotMinTime="17:00:00"
-        slotMaxTime="20:30:00"
+        slotMinTime="17:00:00"       // 5 PM
+        slotMaxTime="20:30:00"       // 8:30 PM
         nowIndicator
         selectable={false}
-        events={[...takenEvents, ...availableBg]}
+        slotDuration={slotMinutes === 60 ? '01:00:00' : '00:30:00'}
+        eventOrder="-start"          // booked draws over open if overlapping
+        events={[...bookedEvents, ...openEvents]}
+        eventContent={(arg) => {
+          const kind = (arg.event.extendedProps as any)?.kind;
+          const label = kind === 'booked' ? 'Booked' : 'Open';
+          // Simple label to match your “Open / Booked” look
+          const el = document.createElement('div');
+          el.style.fontWeight = '700';
+          el.style.fontSize = '12px';
+          el.style.padding = '2px 4px';
+          el.textContent = label;
+          return { domNodes: [el] };
+        }}
         dateClick={(info) => {
+          // Clicking a green gap (not directly on an event)
           const d = new Date(info.date);
-          // snap to slot boundary
           const step = slotMinutes;
           const snapped = new Date(d);
           snapped.setMinutes(Math.floor(d.getMinutes() / step) * step, 0, 0);
-          const ok = available.some(s => s.start.getTime() === snapped.getTime());
-          if (!ok) return;
-          onPickSlot?.(snapped);
+          const ok = openEvents.some(e => e.start.getTime() === snapped.getTime());
+          if (ok) onPickSlot?.(snapped);
+        }}
+        eventClick={(info) => {
+          const kind = (info.event.extendedProps as any)?.kind;
+          if (kind === 'open' && info.event.start) {
+            onPickSlot?.(info.event.start);
+          }
         }}
       />
     </div>
