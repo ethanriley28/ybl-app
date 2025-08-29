@@ -1,53 +1,21 @@
 // lib/supabaseServer.ts
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import type { Resend } from 'resend';
+// Minimal server-side Supabase client that avoids Next 15 cookies typing.
+// Uses SERVICE ROLE if available (server-only), otherwise falls back to ANON.
 
-/**
- * Server-side Supabase client (reads auth cookies on the request)
- */
-export function getServerSupabase() {
-  const cookieStore = cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-        set() {},
-        remove() {},
-      },
-    }
-  );
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+export function supabaseServer(): SupabaseClient {
+  const url = (process.env.SUPABASE_URL || '').trim();
+  const key = (
+    process.env.SUPABASE_SERVICE_ROLE ||
+    process.env.SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+
+  if (!url || !key) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_* key');
+  }
+  return createClient(url, key);
 }
 
-/**
- * Check if a user email is a coach.
- * Set COACH_EMAILS="coach1@email.com,coach2@email.com" in env.
- */
-export function isCoachEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const list = (process.env.COACH_EMAILS || '')
-    .split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean);
-  return list.includes(email.toLowerCase());
-}
-
-/**
- * Optional: send email via Resend when a new video is added.
- * If RESEND_API_KEY is not set, this is a no-op.
- * MAIL_FROM can be like: "Ethan Riley Training <coach@ethanrileytraining.com>"
- */
-export async function sendParentEmail(to: string, subject: string, html: string) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return; // do nothing if Resend isn't configured
-  const { Resend } = (await import('resend')) as { Resend: typeof import('resend').Resend };
-  const resend: Resend = new Resend(key);
-  await resend.emails.send({
-    from: process.env.MAIL_FROM || 'coach@ethanrileytraining.com',
-    to,
-    subject,
-    html,
-  });
-}
+export type { SupabaseClient } from '@supabase/supabase-js';
