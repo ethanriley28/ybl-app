@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
       searchParams.get('to') ||
       new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(); // +30d
 
-    // your schema uses start_ts / end_ts
+    // Your DB uses start_ts / end_ts
     const { data, error } = await admin
       .from('bookings')
       .select('start_ts, end_ts')
