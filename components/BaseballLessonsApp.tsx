@@ -1,264 +1,258 @@
-// components/BaseballLessonsApp.tsx
 'use client';
 
-import * as React from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import React, { useEffect, useMemo, useState } from 'react';
 import BookingCalendar from '@/components/BookingCalendar';
+import { supabase } from '@/lib/supabaseClient';
 
 type Athlete = { id: string; full_name: string | null };
 
-function addMinutes(d: Date, mins: number) {
-  return new Date(d.getTime() + mins * 60000);
-}
-function toLocalDateInputValue(d = new Date()) {
-  const t = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return t.toISOString().slice(0, 10); // yyyy-mm-dd
-}
-function combineLocalDateTime(dateStr: string, timeStr: string) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const [hh, mm] = timeStr.split(':').map(Number);
-  const dt = new Date();
-  dt.setFullYear(y, (m ?? 1) - 1, d ?? 1);
-  dt.setHours(hh ?? 0, mm ?? 0, 0, 0);
-  return dt;
-}
-
 export default function BaseballLessonsApp() {
-  // Redirect to /auth if not logged in
-  React.useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) window.location.href = '/auth';
-    })();
-  }, []);
+  // ----- form state -----
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [athleteId, setAthleteId] = useState<string | null>(null);
+  const [athleteName, setAthleteName] = useState<string>('');
+  const [bkDate, setBkDate] = useState(''); // YYYY-MM-DD
+  const [bkTime, setBkTime] = useState(''); // HH:mm
+  const [slotMinutes, setSlotMinutes] = useState<number>(30); // 30 or 60
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0); // bump to refetch events
 
-  // Load athletes (sorted A→Z)
-  const [athletes, setAthletes] = React.useState<Athlete[]>([]);
-  const [athleteId, setAthleteId] = React.useState<string>('');
-  const [loadingAthletes, setLoadingAthletes] = React.useState(true);
-  const [loadErr, setLoadErr] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
+  // load athletes for the logged-in parent
+  useEffect(() => {
+    let on = true;
     (async () => {
-      try {
-        const { data: u } = await supabase.auth.getUser();
-        if (!u.user) return;
-        const { data, error } = await supabase
-          .from('athletes')
-          .select('id, full_name')
-          .order('full_name', { ascending: true });
-        if (error) throw error;
-        setAthletes((data ?? []) as Athlete[]);
-      } catch (e: any) {
-        setLoadErr(e?.message || 'Failed to load athletes');
-      } finally {
-        setLoadingAthletes(false);
+      const { data, error } = await fetch('/api/athletes', { cache: 'no-store' }).then(r => r.json());
+      if (!on) return;
+      if (error) {
+        console.error(error);
+        setAthletes([]);
+        return;
+      }
+      const rows = (data || []) as Athlete[];
+      setAthletes(rows);
+      // prefill selection if empty
+      if (!athleteId && rows.length > 0) {
+        setAthleteId(rows[0].id);
+        setAthleteName(rows[0].full_name || '');
       }
     })();
-  }, []);
+    return () => { on = false; };
+  }, []); // once
 
-  // Booking form state
-  const [bkDate, setBkDate] = React.useState<string>(toLocalDateInputValue());
-  const [bkTime, setBkTime] = React.useState<string>('17:00'); // 5:00 PM default
-  const [bkLength, setBkLength] = React.useState<number>(60);  // 30 or 60
-  const [bkNote, setBkNote] = React.useState<string>('');
+  // keep athleteName in sync with chosen athleteId
+  useEffect(() => {
+    if (!athleteId) return;
+    const a = athletes.find(x => x.id === athleteId);
+    setAthleteName(a?.full_name || '');
+  }, [athleteId, athletes]);
 
-  // Feedback + calendar refresh key
-  const [saving, setSaving] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
-  const [calVer, setCalVer] = React.useState(0);   // triggers calendar refetch
+  // helper: make ISO strings from local date & time
+  const startEndISO = useMemo(() => {
+    if (!bkDate || !bkTime) return { startISO: '', endISO: '' };
+    // Construct a local Date from the date+time inputs
+    const [yyyy, mm, dd] = bkDate.split('-').map(Number);
+    const [HH, MM] = bkTime.split(':').map(Number);
+    const start = new Date(yyyy, (mm - 1), dd, HH, MM, 0, 0); // local time
+    const end = new Date(start.getTime() + slotMinutes * 60 * 1000);
+    return { startISO: start.toISOString(), endISO: end.toISOString() };
+  }, [bkDate, bkTime, slotMinutes]);
 
-  async function handleAddBooking() {
-    setMsg(null);
-    setErr(null);
-    if (!athleteId) { setErr('Please select an athlete.'); return; }
-    if (!bkDate || !bkTime) { setErr('Pick a date and time.'); return; }
-
-    const start = combineLocalDateTime(bkDate, bkTime);
-    const end = addMinutes(start, bkLength);
-
+  async function submitBooking() {
     try {
-      setSaving(true);
-      const { data: u } = await supabase.auth.getUser();
-      const user_id = u.user?.id ?? null;
-      const athlete_name = athletes.find(a => a.id === athleteId)?.full_name ?? null;
+      if (!athleteName || !bkDate || !bkTime) {
+        alert('Please select athlete, date and time.');
+        return;
+      }
+      setSubmitting(true);
 
-      // Use start_ts / end_ts to match your DB
-      const { error } = await supabase.from('bookings').insert({
-        user_id,
-        athlete_id: athleteId,
-        athlete_name, // ok if the column exists; ignore otherwise
-        start_ts: start.toISOString(),
-        end_ts: end.toISOString(),
-        note: bkNote,
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          athleteId,
+          athleteName,
+          startISO: startEndISO.startISO,
+          endISO: startEndISO.endISO,
+          note: note || '',
+        }),
       });
-      if (error) throw error;
+      const json = await res.json();
 
-      setMsg('Booked! You should also see this slot turn red in the calendar.');
-      setBkNote('');
-      setCalVer(v => v + 1);   // force calendar to refetch occupied slots
-    } catch (e: any) {
-      setErr(e?.message || 'Booking failed.');
+      if (!json.ok) {
+        alert(json.error || 'Failed to create booking');
+        return;
+      }
+
+      // success → calendar turns red immediately
+      setRefreshKey(k => k + 1);
+      // optional: clear the note
+      setNote('');
+      alert('Booking created!');
+    } catch (e) {
+      console.error(e);
+      alert('Something went wrong.');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   }
 
-  // Styles
-  const card: React.CSSProperties = {
-    border: '1px solid #e5e7eb',
-    borderRadius: 12,
-    padding: 16,
-    background: '#fff',
-    color: '#111',
-  };
-  const input: React.CSSProperties = {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: 10,
-    border: '1px solid #d1d5db',
-    background: '#fff',
-    color: '#111',
-  };
-  const btnPrimary: React.CSSProperties = {
-    padding: '10px 14px',
-    borderRadius: 10,
-    border: '1px solid #111',
-    background: '#111',
-    color: '#fff',
-    fontWeight: 800,
-    cursor: 'pointer',
-  };
-  const btnToggle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: '10px 12px',
-    borderRadius: 10,
-    border: active ? '2px solid #111' : '1px solid #d1d5db',
-    background: active ? '#f3f4f6' : '#fff',
-    cursor: 'pointer',
-    fontWeight: 800,
-  });
-
   return (
-    <main style={{ minHeight: '100dvh', background: '#0b0b0b', color: '#fff' }}>
-      <div style={{ maxWidth: 1100, margin: '24px auto', padding: '0 16px' }}>
-        {/* Spacer below global TopBar (we removed the duplicate local header) */}
-        <div style={{ height: 8 }} />
+    <div style={{ display: 'grid', gap: 16 }}>
+      {/* ---- Booking form ---- */}
+      <div
+        style={{
+          border: '1px solid #e5e7eb',
+          borderRadius: 12,
+          padding: 16,
+          background: '#fff',
+        }}
+      >
+        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 12 }}>
+          Create a Booking
+        </div>
 
-        {/* Athlete picker */}
-        <section style={card}>
-          <div style={{ display: 'grid', gap: 12 }}>
-            <label style={{ display: 'grid', gap: 6, maxWidth: 520 }}>
-              <span style={{ fontSize: 12, color: '#6b7280' }}>Athlete</span>
-              <select
-                value={athleteId}
-                onChange={e => setAthleteId(e.target.value)}
-                style={input}
-              >
-                <option value="">— Select athlete —</option>
-                {athletes.map(a => (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 12,
+          }}
+        >
+          {/* Athlete */}
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Athlete</span>
+            <select
+              value={athleteId ?? ''}
+              onChange={(e) => setAthleteId(e.target.value || null)}
+              style={inpStyle}
+            >
+              <option value="">— Select athlete —</option>
+              {Array.isArray(athletes) &&
+                athletes.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.full_name || 'Unnamed'}
+                    {a.full_name || '(No name)'}
                   </option>
                 ))}
-              </select>
-            </label>
-            {loadingAthletes && <div style={{ color: '#94a3b8' }}>Loading athletes…</div>}
-            {loadErr && <div style={{ color: '#fecaca' }}>{loadErr}</div>}
+            </select>
+          </label>
+
+          {/* Length */}
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Length</span>
+            <select
+              value={slotMinutes}
+              onChange={(e) => setSlotMinutes(parseInt(e.target.value, 10))}
+              style={inpStyle}
+            >
+              <option value={30}>30 minutes</option>
+              <option value={60}>60 minutes</option>
+            </select>
+          </label>
+
+          {/* Date */}
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Date</span>
+            <input
+              type="date"
+              value={bkDate}
+              onChange={(e) => setBkDate(e.target.value)}
+              style={inpStyle}
+            />
+          </label>
+
+          {/* Time */}
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Time</span>
+            <input
+              type="time"
+              value={bkTime}
+              onChange={(e) => setBkTime(e.target.value)}
+              style={inpStyle}
+              step={60 * 30} // 30-minute steps
+            />
+          </label>
+
+          {/* Note (full width) */}
+          <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Note (optional)</span>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              style={{ ...inpStyle, resize: 'vertical' }}
+              placeholder="Anything helpful for the session..."
+            />
+          </label>
+
+          {/* Submit (full width) */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <button
+              onClick={submitBooking}
+              disabled={submitting}
+              style={btnStyle}
+            >
+              {submitting ? 'Saving…' : 'Add Booking'}
+            </button>
           </div>
-        </section>
+        </div>
 
-        {/* Create Booking */}
-        <section style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 18 }}>Create Booking</div>
-
-          <div style={card}>
-            <div style={{ display: 'grid', gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 520 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: '#6b7280' }}>Date</span>
-                  <input
-                    type="date"
-                    value={bkDate}
-                    onChange={(e) => setBkDate(e.target.value)}
-                    style={input}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: '#6b7280' }}>Time</span>
-                  <input
-                    type="time"
-                    value={bkTime}
-                    onChange={(e) => setBkTime(e.target.value)}
-                    step={300}
-                    style={input}
-                  />
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, maxWidth: 520 }}>
-                <button type="button" onClick={() => setBkLength(30)} style={btnToggle(bkLength === 30)}>
-                  30 minutes
-                </button>
-                <button type="button" onClick={() => setBkLength(60)} style={btnToggle(bkLength === 60)}>
-                  60 minutes
-                </button>
-              </div>
-
-              <label style={{ display: 'grid', gap: 6, maxWidth: 520 }}>
-                <span style={{ fontSize: 12, color: '#6b7280' }}>Note (optional)</span>
-                <input
-                  type="text"
-                  placeholder="e.g., focus on hitting / fielding"
-                  value={bkNote}
-                  onChange={(e) => setBkNote(e.target.value)}
-                  style={input}
-                />
-              </label>
-
-              <div>
-                <button
-                  type="button"
-                  onClick={handleAddBooking}
-                  disabled={saving}
-                  style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}
-                >
-                  {saving ? 'Booking…' : 'Add Booking'}
-                </button>
-              </div>
-
-              {msg && <div style={{ color: '#bbf7d0' }}>{msg}</div>}
-              {err && <div style={{ color: '#fecaca' }}>{err}</div>}
-            </div>
-          </div>
-
-          {/* Availability calendar (selection fills form) */}
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>See openings</div>
-            <div style={{ border: '1px solid #222', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
-              <BookingCalendar
-                refreshKey={calVer}          // forces refetch after booking
-                slotMinutes={bkLength}
-                onPickSlot={(start) => {
-                  const yyyy = start.getFullYear();
-                  const mm = String(start.getMonth() + 1).padStart(2, '0');
-                  const dd = String(start.getDate()).padStart(2, '0');
-                  const hh = String(start.getHours()).padStart(2, '0');
-                  const mi = String(start.getMinutes()).padStart(2, '0');
-                  setBkDate(`${yyyy}-${mm}-${dd}`);
-                  setBkTime(`${hh}:${mi}`);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              />
-            </div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>
-              Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
-            </div>
-          </div>
-        </section>
+        <div style={{ color: '#6b7280', fontSize: 12, marginTop: 8 }}>
+          Tip: you can also tap a time slot on the calendar below—date & time will
+          auto-fill here.
+        </div>
       </div>
-    </main>
+
+      {/* ---- Calendar ---- */}
+      <div
+        style={{
+          border: '1px solid #e5e7eb',
+          borderRadius: 12,
+          padding: 8,
+          background: '#fff',
+          overflow: 'hidden',
+        }}
+      >
+        <BookingCalendar
+          slotMinutes={slotMinutes}
+          refreshKey={refreshKey}
+          onPickSlot={(start) => {
+            // write picked slot back into the form inputs
+            const yyyy = start.getFullYear();
+            const mm = String(start.getMonth() + 1).padStart(2, '0');
+            const dd = String(start.getDate()).padStart(2, '0');
+            const hh = String(start.getHours()).padStart(2, '0');
+            const min = String(start.getMinutes()).padStart(2, '0');
+            setBkDate(`${yyyy}-${mm}-${dd}`);
+            setBkTime(`${hh}:${min}`);
+          }}
+        />
+      </div>
+    </div>
   );
 }
+
+/** simple styles */
+const inpStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #d1d5db',
+  background: '#fff',
+  color: '#111827',
+};
+
+const btnStyle: React.CSSProperties = {
+  padding: '10px 14px',
+  borderRadius: 10,
+  border: '1px solid #111827',
+  background: '#111827',
+  color: '#fff',
+  cursor: 'pointer',
+};
