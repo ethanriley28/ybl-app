@@ -10,8 +10,8 @@ type Occupied = { start: string; end: string };
 
 type Props = {
   slotMinutes: number;            // 30 or 60
-  daysAhead?: number;             // how many days to show
-  refreshKey?: number;            // re-fetch when this changes
+  daysAhead?: number;             // default 21
+  refreshKey?: number;            // bump to refetch after booking
   onPickSlot?: (start: Date) => void;
 };
 
@@ -43,7 +43,7 @@ export default function BookingCalendar({
   const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + daysAhead); return d; }, [daysAhead]);
 
-  // Fetch occupied whenever range or refreshKey changes
+  // fetch occupied
   React.useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -64,7 +64,7 @@ export default function BookingCalendar({
     return () => { isMounted = false; };
   }, [startRange, endRange, refreshKey]);
 
-  // Build available slots from weekly hours, removing occupied
+  // build available slots from weekly hours – remove occupied
   const weekly = React.useMemo(() => parseWeekly(), []);
   const available = React.useMemo(() => {
     const out: { start: Date; end: Date }[] = [];
@@ -96,7 +96,7 @@ export default function BookingCalendar({
     return out.sort((a,b) => a.start.getTime() - b.start.getTime());
   }, [occupied, weekly, slotMinutes, startRange, endRange]);
 
-  // Events: red = booked, green = open (with label)
+  // events to render (green = open filling ENTIRE slot, red = booked)
   const bookedEvents = occupied.map(o => ({
     start: new Date(o.start),
     end: new Date(o.end),
@@ -104,36 +104,47 @@ export default function BookingCalendar({
     backgroundColor: '#dc2626',
     borderColor: '#b91c1c',
     textColor: '#ffffff',
-    display: 'block' as const,
+    display: 'block' as const,  // full cell fill
     overlap: false,
     extendedProps: { kind: 'booked' as const },
   }));
 
-  const openEvents = available.slice(0, 600).map(s => ({
+  const openEvents = available.slice(0, 1000).map(s => ({
     start: s.start,
     end: s.end,
     title: 'Open',
-    backgroundColor: 'rgba(34,197,94,.35)', // green-ish
-    borderColor: '#16a34a',
-    textColor: '#bbf7d0',
-    display: 'block' as const,
+    backgroundColor: '#0a3f34',      // deep green
+    borderColor: '#0a3f34',
+    textColor: '#d1fae5',
+    display: 'block' as const,       // full cell fill
     overlap: false,
     extendedProps: { kind: 'open' as const },
   }));
 
   return (
     <div>
-      {/* Make sure header/labels are readable regardless of the page theme */}
+      {/* Styles to match your “full-green” look with two-line day headers */}
       <style jsx global>{`
-        .fc .fc-toolbar-title { color: #111; font-weight: 800; }
+        .fc .fc-toolbar-title { color: #e5e7eb; font-weight: 800; }
+        .fc .fc-toolbar.fc-header-toolbar {
+          background: #0b0b0b; padding: 6px 8px; border-radius: 8px 8px 0 0;
+        }
         .fc .fc-button { background: #111; border: 1px solid #111; }
-        .fc .fc-button:disabled { opacity: .6; }
-        .fc .fc-button-primary:not(:disabled).fc-button-active { background: #111; }
-        .fc .fc-col-header-cell-cushion { color: #111 !important; font-weight: 700; }
-        .fc .fc-timegrid-slot-label { color: #111; }
+        .fc .fc-col-header-cell { background: #0b0b0b; }
+        .fc .fc-col-header-cell-cushion {
+          color: #e5e7eb !important; font-weight: 700; line-height: 1.1;
+          display: flex; flex-direction: column; align-items: center;
+        }
+        .fc .fc-timegrid-slot-label { color: #e5e7eb; }
         .fc-theme-standard .fc-scrollgrid,
         .fc-theme-standard td, .fc-theme-standard th { border-color: #1f2937; }
-        .fc .fc-timegrid-axis-cushion { color: #111; }
+        .fc .fc-timegrid-now-indicator-line { border-color: #f59e0b; }
+        /* Remove tan selection/drag highlights */
+        .fc .fc-highlight { background: transparent; }
+        /* Make event boxes fill the whole slot visually */
+        .fc .fc-timegrid-event { border-radius: 0; }
+        /* Hide default event time text; we only show 'Open'/'Booked' labels */
+        .fc .fc-event-time { display: none; }
       `}</style>
 
       {loading && <div style={{ color:'#94a3b8', padding: 8 }}>Loading…</div>}
@@ -144,40 +155,28 @@ export default function BookingCalendar({
         initialView="timeGridWeek"
         height="auto"
         allDaySlot={false}
-        slotMinTime="17:00:00"                // 5 PM
-        slotMaxTime="20:30:00"                // 8:30 PM
+        slotMinTime="17:00:00"               // 5 PM
+        slotMaxTime="20:30:00"               // 8:30 PM
         nowIndicator
         selectable={false}
         slotDuration={slotMinutes === 60 ? '01:00:00' : '00:30:00'}
         eventOrder="-start"
-        // Top toolbar (title + prev/next/today)
         headerToolbar={{ start: 'title', center: '', end: 'today prev,next' }}
-        // Show clear day names + dates above each column
-        dayHeaderContent={(arg) => {
-          const d = arg.date;
-          const weekday = d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
-          const month   = d.toLocaleDateString(undefined, { month: 'short' });   // Aug
-          const day     = d.getDate();                                            // 28
-          const el = document.createElement('div');
-          el.style.fontWeight = '700';
-          el.textContent = `${weekday} ${month} ${day}`;
-          return { domNodes: [el] };
-        }}
-        // Nice time labels on the left
+        dayHeaderFormat={{ weekday: 'short', month: 'short', day: 'numeric' }}
         slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
-        events={[...bookedEvents, ...openEvents]}
+        events={[...openEvents, ...bookedEvents]}  // put OPEN first so red overrides
         eventContent={(arg) => {
           const kind = (arg.event.extendedProps as any)?.kind;
           const label = kind === 'booked' ? 'Booked' : 'Open';
           const el = document.createElement('div');
-          el.style.fontWeight = '700';
+          el.style.fontWeight = '800';
           el.style.fontSize = '12px';
           el.style.padding = '2px 4px';
           el.textContent = label;
           return { domNodes: [el] };
         }}
         dateClick={(info) => {
-          // Also allow tapping a green background slot (not only the green event)
+          // allow tapping a green gap (not only the event box)
           const d = new Date(info.date);
           const step = slotMinutes;
           const snapped = new Date(d);
