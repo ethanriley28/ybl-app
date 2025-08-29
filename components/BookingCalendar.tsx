@@ -9,9 +9,9 @@ import interactionPlugin from '@fullcalendar/interaction';
 type Occupied = { start: string; end: string };
 
 type Props = {
-  slotMinutes: number;      // 30 or 60
-  daysAhead?: number;       // how many days to show
-  refreshKey?: number;      // refetch when this changes
+  slotMinutes: number;            // 30 or 60
+  daysAhead?: number;             // how many days to show
+  refreshKey?: number;            // re-fetch when this changes
   onPickSlot?: (start: Date) => void;
 };
 
@@ -43,7 +43,7 @@ export default function BookingCalendar({
   const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + daysAhead); return d; }, [daysAhead]);
 
-  // Fetch occupied when range or refreshKey changes
+  // Fetch occupied whenever range or refreshKey changes
   React.useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -51,11 +51,8 @@ export default function BookingCalendar({
       try {
         const from = startRange.toISOString();
         const to   = endRange.toISOString();
-        const res  = await fetch(
-          `/api/bookings/occupied?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-          { cache: 'no-store' }
-        );
-        const j = await res.json();
+        const res  = await fetch(`/api/bookings/occupied?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cache: 'no-store' });
+        const j    = await res.json();
         if (!j.ok) throw new Error(j.error || 'failed');
         if (isMounted) setOccupied(j.occupied || []);
       } catch (e: any) {
@@ -67,7 +64,7 @@ export default function BookingCalendar({
     return () => { isMounted = false; };
   }, [startRange, endRange, refreshKey]);
 
-  // Build "open" slots from weekly hours, subtracting occupied slots
+  // Build available slots from weekly hours, removing occupied
   const weekly = React.useMemo(() => parseWeekly(), []);
   const available = React.useMemo(() => {
     const out: { start: Date; end: Date }[] = [];
@@ -99,9 +96,7 @@ export default function BookingCalendar({
     return out.sort((a,b) => a.start.getTime() - b.start.getTime());
   }, [occupied, weekly, slotMinutes, startRange, endRange]);
 
-  // Events for the calendar:
-  // - Red "Booked" blocks for occupied
-  // - Green "Open" blocks for available (click to choose)
+  // Events: red = booked, green = open (with label)
   const bookedEvents = occupied.map(o => ({
     start: new Date(o.start),
     end: new Date(o.end),
@@ -118,7 +113,7 @@ export default function BookingCalendar({
     start: s.start,
     end: s.end,
     title: 'Open',
-    backgroundColor: 'rgba(34,197,94,.35)', // green
+    backgroundColor: 'rgba(34,197,94,.35)', // green-ish
     borderColor: '#16a34a',
     textColor: '#bbf7d0',
     display: 'block' as const,
@@ -128,24 +123,52 @@ export default function BookingCalendar({
 
   return (
     <div>
+      {/* Make sure header/labels are readable regardless of the page theme */}
+      <style jsx global>{`
+        .fc .fc-toolbar-title { color: #111; font-weight: 800; }
+        .fc .fc-button { background: #111; border: 1px solid #111; }
+        .fc .fc-button:disabled { opacity: .6; }
+        .fc .fc-button-primary:not(:disabled).fc-button-active { background: #111; }
+        .fc .fc-col-header-cell-cushion { color: #111 !important; font-weight: 700; }
+        .fc .fc-timegrid-slot-label { color: #111; }
+        .fc-theme-standard .fc-scrollgrid,
+        .fc-theme-standard td, .fc-theme-standard th { border-color: #1f2937; }
+        .fc .fc-timegrid-axis-cushion { color: #111; }
+      `}</style>
+
       {loading && <div style={{ color:'#94a3b8', padding: 8 }}>Loading…</div>}
       {err && <div style={{ color:'#fecaca', padding: 8 }}>Error: {err}</div>}
+
       <FullCalendar
         plugins={[timeGridPlugin, interactionPlugin]}
         initialView="timeGridWeek"
         height="auto"
         allDaySlot={false}
-        slotMinTime="17:00:00"       // 5 PM
-        slotMaxTime="20:30:00"       // 8:30 PM
+        slotMinTime="17:00:00"                // 5 PM
+        slotMaxTime="20:30:00"                // 8:30 PM
         nowIndicator
         selectable={false}
         slotDuration={slotMinutes === 60 ? '01:00:00' : '00:30:00'}
-        eventOrder="-start"          // booked draws over open if overlapping
+        eventOrder="-start"
+        // Top toolbar (title + prev/next/today)
+        headerToolbar={{ start: 'title', center: '', end: 'today prev,next' }}
+        // Show clear day names + dates above each column
+        dayHeaderContent={(arg) => {
+          const d = arg.date;
+          const weekday = d.toLocaleDateString(undefined, { weekday: 'short' }); // Mon
+          const month   = d.toLocaleDateString(undefined, { month: 'short' });   // Aug
+          const day     = d.getDate();                                            // 28
+          const el = document.createElement('div');
+          el.style.fontWeight = '700';
+          el.textContent = `${weekday} ${month} ${day}`;
+          return { domNodes: [el] };
+        }}
+        // Nice time labels on the left
+        slotLabelFormat={{ hour: 'numeric', minute: '2-digit', hour12: true }}
         events={[...bookedEvents, ...openEvents]}
         eventContent={(arg) => {
           const kind = (arg.event.extendedProps as any)?.kind;
           const label = kind === 'booked' ? 'Booked' : 'Open';
-          // Simple label to match your “Open / Booked” look
           const el = document.createElement('div');
           el.style.fontWeight = '700';
           el.style.fontSize = '12px';
@@ -154,7 +177,7 @@ export default function BookingCalendar({
           return { domNodes: [el] };
         }}
         dateClick={(info) => {
-          // Clicking a green gap (not directly on an event)
+          // Also allow tapping a green background slot (not only the green event)
           const d = new Date(info.date);
           const step = slotMinutes;
           const snapped = new Date(d);
@@ -164,9 +187,7 @@ export default function BookingCalendar({
         }}
         eventClick={(info) => {
           const kind = (info.event.extendedProps as any)?.kind;
-          if (kind === 'open' && info.event.start) {
-            onPickSlot?.(info.event.start);
-          }
+          if (kind === 'open' && info.event.start) onPickSlot?.(info.event.start);
         }}
       />
     </div>
