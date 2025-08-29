@@ -1,86 +1,105 @@
-@import "tailwindcss";
+/* Tailwind (keep these at the top) */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ---- Base app look (safe defaults) ---- */
+:root, html, body { height: 100%; }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #0a0a0a;            /* app dark bg */
+  color: #e5e7eb;                 /* slate-200 text */
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-/* ===== ERT FullCalendar theme — match screenshot ===== */
+a { color: inherit; text-decoration: none; }
+
+/* Small utility for muted text (used under the calendar) */
+.muted { color: #9ca3af; }
+
+/* =================================================================== */
+/*            Ethan Riley Training — FullCalendar Theme                 */
+/* =================================================================== */
 .fc {
-  --ert-bg:#0b0b0b;          /* toolbar bg */
-  --ert-header:#0e1628;      /* header row & time axis */
+  --ert-bg:#0b0b0b;          /* toolbar background */
+  --ert-header:#0e1628;      /* header row & time axis background */
   --ert-grid:#1f2937;        /* grid line color */
-  --ert-green:#0e4f43;       /* open cell */
-  --ert-green-text:#eafaf4;
-  --ert-red:#b91c1c;         /* booked cell */
-  --ert-red-border:#991b1b;
+  --ert-green:#0e4f43;       /* OPEN cell fill */
+  --ert-green-text:#eafaf4;  /* OPEN text */
+  --ert-red:#b91c1c;         /* BOOKED cell fill */
+  --ert-red-border:#991b1b;  /* BOOKED border */
 }
 
-/* toolbar like screenshot (dark with title left, today/prev/next right) */
+/* ----- Toolbar like your screenshot: title left, tiny buttons right ----- */
 .fc .fc-toolbar.fc-header-toolbar{
   background:var(--ert-bg);
   padding:6px 10px;
   border-radius:8px 8px 0 0;
 }
-.fc .fc-toolbar-title{ color:#e5e7eb; font-weight:800; }
-
-/* small dark buttons on right */
+.fc .fc-toolbar-title{
+  color:#e5e7eb; font-weight:800; font-size:16px;
+}
 .fc .fc-button{
   background:#0f172a; border:1px solid #0f172a; color:#fff; border-radius:8px;
+  padding:3px 8px; line-height:1.1; font-size:12px;
 }
 .fc .fc-button-primary:not(:disabled).fc-button-active{ background:#0f172a; }
 
-/* header row with two lines (Mon / Aug 25) */
+/* ----- Header row (two-line day headers) ----- */
 .fc .fc-col-header-cell{ background:var(--ert-header); }
 .fc .fc-col-header-cell-cushion{
-  display:flex; flex-direction:column; align-items:center;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
   color:#e5e7eb !important; line-height:1.1; font-weight:800;
+  padding: 10px 0;               /* more breathing room */
 }
-.fc .fc-col-header-cell-cushion .fc-day-line-1{ font-size:13px; }
-.fc .fc-col-header-cell-cushion .fc-day-line-2{ font-size:12px; color:#9ca3af; font-weight:700; }
+/* TOP line: day (Mon) — bigger */
+.fc .fc-col-header-cell-cushion .fc-day-line-1{
+  font-size: 16px;               /* bump up from 13 -> 16 */
+  letter-spacing: .2px;
+}
+/* BOTTOM line: month + date (Aug 25) */
+.fc .fc-col-header-cell-cushion .fc-day-line-2{
+  font-size: 14px;               /* bump up from 12 -> 14 */
+  color:#9ca3af; font-weight:700;
+}
 
-/* left time axis dark like header */
-.fc .fc-timegrid-axis{ background:var(--ert-header); color:#e5e7eb; }
+/* Left time axis look */
+.fc .fc-timegrid-axis{
+  background:var(--ert-header); color:#e5e7eb;
+}
 
-/* crisp grid lines */
+/* Grid lines & general chrome */
 .fc-theme-standard .fc-scrollgrid,
-.fc-theme-standard td, .fc-theme-standard th{ border-color:var(--ert-grid); }
+.fc-theme-standard td, .fc-theme-standard th{
+  border-color:var(--ert-grid);
+}
 
-/* event boxes fill entire slot with no rounded corners */
+/* Event blocks fill the slot; hide default tiny time label */
 .fc .fc-timegrid-event{ border-radius:0; }
-.fc .fc-event-time{ display:none; } /* hide built-in time label */
+.fc .fc-event-time{ display:none; }
 
-/* remove selection highlight (keeps green solid) */
+/* Remove selection highlight so green stays solid when clicking */
 .fc .fc-highlight{ background:transparent; }
 
-/* colors for events */
+/* ----- OPEN / BOOKED colors (exact) ----- */
 .fc-event.open-slot{
   background:var(--ert-green) !important;
   border-color:var(--ert-green) !important;
   color:var(--ert-green-text) !important;
+  box-shadow: none !important;
 }
 .fc-event.booked-slot{
   background:var(--ert-red) !important;
   border-color:var(--ert-red-border) !important;
   color:#fff !important;
+  box-shadow: none !important;
 }
 
+/* Better row height for visibility */
+.fc .fc-timegrid-slot { height: 2.25rem; } /* ~36px rows */
+
+/* Mobile tweaks: slightly smaller header text */
+@media (max-width: 480px){
+  .fc .fc-col-header-cell-cushion .fc-day-line-1{ font-size:15px; }
+  .fc .fc-col-header-cell-cushion .fc-day-line-2{ font-size:13px; }
+}
