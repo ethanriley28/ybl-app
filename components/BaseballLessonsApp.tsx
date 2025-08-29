@@ -67,7 +67,7 @@ export default function BaseballLessonsApp() {
   const [saving, setSaving] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
-  const [calVer, setCalVer] = React.useState(0);   // <— refresh key
+  const [calVer, setCalVer] = React.useState(0);   // triggers calendar refetch
 
   async function handleAddBooking() {
     setMsg(null);
@@ -97,7 +97,7 @@ export default function BaseballLessonsApp() {
 
       setMsg('Booked! You should also see this slot turn red in the calendar.');
       setBkNote('');
-      setCalVer(v => v + 1);   // <— trigger calendar refetch
+      setCalVer(v => v + 1);   // force calendar to refetch occupied slots
     } catch (e: any) {
       setErr(e?.message || 'Booking failed.');
     } finally {
@@ -143,15 +143,8 @@ export default function BaseballLessonsApp() {
   return (
     <main style={{ minHeight: '100dvh', background: '#0b0b0b', color: '#fff' }}>
       <div style={{ maxWidth: 1100, margin: '24px auto', padding: '0 16px' }}>
-        {/* Header */}
-        <header style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>Ethan Riley Training — Scheduler</div>
-          <nav style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <a href="/book" style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #374151', background: '#0f172a', color: '#fff', textDecoration: 'none' }}>Book (calendar)</a>
-            <a href="/pricing" style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #374151', background: '#0f172a', color: '#fff', textDecoration: 'none' }}>Pricing</a>
-            <a href="/register" style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #374151', background: '#0f172a', color: '#fff', textDecoration: 'none' }}>Register Athlete</a>
-          </nav>
-        </header>
+        {/* Spacer below global TopBar (we removed the duplicate local header) */}
+        <div style={{ height: 8 }} />
 
         {/* Athlete picker */}
         <section style={card}>
@@ -246,7 +239,7 @@ export default function BaseballLessonsApp() {
             <div style={{ fontWeight: 700, marginBottom: 8 }}>See openings</div>
             <div style={{ border: '1px solid #222', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
               <BookingCalendar
-                refreshKey={calVer}          // ← forces refetch after booking
+                refreshKey={calVer}          // forces refetch after booking
                 slotMinutes={bkLength}
                 onPickSlot={(start) => {
                   const yyyy = start.getFullYear();
