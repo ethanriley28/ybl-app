@@ -1,217 +1,134 @@
+// components/BookingCalendar.tsx
 'use client';
+
 import * as React from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import FullCalendar from '@fullcalendar/react';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin from '@fullcalendar/interaction';
 
-type Occupied = { start: string; end: string; status: string | null };
+type Occupied = { start: string; end: string };
 
-function startOfWeek(d: Date) {
-  const x = new Date(d);
-  const day = x.getDay();              // 0 Sun … 6 Sat
-  const diff = (day + 6) % 7;          // Monday = 0
-  x.setHours(0, 0, 0, 0);
-  x.setDate(x.getDate() - diff);
-  return x;
+type Props = {
+  slotMinutes: number;
+  daysAhead?: number;
+  refreshKey?: number;            // when this changes, we refetch
+  onPickSlot?: (start: Date) => void;
+};
+
+function addMinutes(d: Date, mins: number) {
+  return new Date(d.getTime() + mins * 60000);
 }
-function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function toISO(d: Date) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString(); }
-function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
-function fmtTime(d: Date) { return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
+  return aStart < bEnd && bStart < aEnd;
+}
+function parseWeekly(): Record<string, [string, string][]> {
+  try {
+    const raw = process.env.NEXT_PUBLIC_COACH_WEEKLY_HOURS as string | undefined;
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 export default function BookingCalendar({
   slotMinutes,
+  daysAhead = 21,
+  refreshKey,
   onPickSlot,
-}: {
-  slotMinutes: number;
-  onPickSlot?: (start: Date) => void;
-}) {
-  const [weekStart, setWeekStart] = React.useState(() => startOfWeek(new Date()));
-  const [busy, setBusy] = React.useState<Occupied[]>([]);
+}: Props) {
+  const [occupied, setOccupied] = React.useState<Occupied[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // --- responsive: detect mobile (SSR safe) ---
-  const [isMobile, setIsMobile] = React.useState(false);
+  const startRange = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const endRange   = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+daysAhead); return d; }, [daysAhead]);
+
+  // Fetch occupied whenever range OR refreshKey changes
   React.useEffect(() => {
-    const fn = () => setIsMobile(window.innerWidth < 640);
-    fn();
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
+    let isMounted = true;
+    (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const from = startRange.toISOString();
+        const to   = endRange.toISOString();
+        const res  = await fetch(`/api/bookings/occupied?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cache: 'no-store' });
+        const j    = await res.json();
+        if (!j.ok) throw new Error(j.error || 'failed');
+        if (isMounted) setOccupied(j.occupied || []);
+      } catch (e: any) {
+        if (isMounted) setErr(e?.message || 'Could not load calendar');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [startRange, endRange, refreshKey]);
 
-  // Mon–Fri of current week
-  const days = React.useMemo(() => [0,1,2,3,4].map(i => addDays(weekStart, i)), [weekStart]);
+  // Build available slots (green background) from weekly hours
+  const weekly = React.useMemo(() => parseWeekly(), []);
+  const available = React.useMemo(() => {
+    const out: { start: Date; end: Date }[] = [];
+    const now = new Date();
+    const occ = occupied.map(o => ({ s: new Date(o.start), e: new Date(o.end) }));
+    const cur = new Date(startRange);
 
-  // Selected day (for mobile list)
-  const [selectedDay, setSelectedDay] = React.useState<Date | null>(null);
-  React.useEffect(() => {
-    // pick today if it’s within the week & Mon–Fri, else Monday
-    const today = new Date();
-    const end = addDays(weekStart, 7);
-    const inWeek = today >= weekStart && today < end && today.getDay() >= 1 && today.getDay() <= 5;
-    setSelectedDay(inWeek ? today : days[0]);
-  }, [weekStart, days]);
+    while (cur < endRange) {
+      const day = ['sun','mon','tue','wed','thu','fri','sat'][cur.getDay()];
+      const windows = (weekly[day] || []) as [string, string][];
 
-  // Fetch bookings for the week (for coloring)
-  async function load() {
-    setLoading(true); setErr(null);
-    const from = toISO(weekStart);
-    const to = toISO(addDays(weekStart, 7));
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('start_time, end_time, status')
-      .gte('start_time', from)
-      .lt('start_time', to);
-    if (error) setErr(error.message);
-    setBusy((data ?? []).map(r => ({
-      start: (r as any).start_time,
-      end: (r as any).end_time,
-      status: (r as any).status
-    })));
-    setLoading(false);
-  }
-  React.useEffect(() => { load(); }, [weekStart, slotMinutes]);
+      windows.forEach(([from, to]) => {
+        const [fh,fm] = from.split(':').map(Number);
+        const [th,tm] = to.split(':').map(Number);
+        const winStart = new Date(cur); winStart.setHours(fh, fm, 0, 0);
+        const winEnd   = new Date(cur); winEnd.setHours(th, tm, 0, 0);
 
-  function slotIsBooked(s: Date, e: Date) {
-    const sMs = s.getTime(), eMs = e.getTime();
-    return busy.some(b => {
-      const bs = new Date(b.start).getTime();
-      const be = new Date(b.end).getTime();
-      return sMs < be && eMs > bs; // overlap
-    });
-  }
+        for (let t = new Date(winStart); addMinutes(t, slotMinutes) <= winEnd; t = addMinutes(t, slotMinutes)) {
+          const s = new Date(t);
+          const e = addMinutes(s, slotMinutes);
+          if (s <= now) continue;
+          if (!occ.some(o => overlaps(s, e, o.s, o.e))) out.push({ start: s, end: e });
+        }
+      });
 
-  // build time rows (5–8 PM)
-  const rows: Date[] = React.useMemo(() => {
-    const base = new Date(weekStart); base.setHours(17, 0, 0, 0);
-    const end  = new Date(weekStart); end.setHours(20, 0, 0, 0);
-    const out: Date[] = [];
-    for (let t = new Date(base); t < end; t = new Date(t.getTime() + slotMinutes * 60000)) {
-      out.push(new Date(t));
+      cur.setDate(cur.getDate() + 1);
     }
-    return out;
-  }, [weekStart, slotMinutes]);
 
-  // ---------- RENDER ----------
+    return out.sort((a,b) => a.start.getTime() - b.start.getTime());
+  }, [occupied, weekly, slotMinutes, startRange, endRange]);
+
+  // Events: red = booked, green background = available
+  const takenEvents = occupied.map(o => ({
+    start: o.start, end: o.end, title: 'Booked', color: '#dc2626'
+  }));
+  const availableBg = available.slice(0, 500).map(s => ({
+    start: s.start.toISOString(), end: s.end.toISOString(), display: 'background' as const, color: 'rgba(34,197,94,.15)'
+  }));
+
   return (
-    <div style={{ border: '1px solid #1f2937', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
-      {/* header with week & nav */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#111', color: '#fff' }}>
-        <div style={{ fontWeight: 700 }}>{fmtDate(days[0])} – {fmtDate(addDays(weekStart, 6))}</div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => setWeekStart(startOfWeek(new Date()))} style={navBtn}>today</button>
-          <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={navBtn}>‹</button>
-          <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={navBtn}>›</button>
-        </div>
-      </div>
-
-      {/* MOBILE: chips + vertical list of slots */}
-      {isMobile ? (
-        <div style={{ padding: 10 }}>
-          {/* day chips */}
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
-            {days.map(d => {
-              const active = selectedDay && d.toDateString() === selectedDay.toDateString();
-              return (
-                <button
-                  key={d.toISOString()}
-                  onClick={() => setSelectedDay(d)}
-                  style={{
-                    whiteSpace: 'nowrap',
-                    padding: '8px 10px',
-                    borderRadius: 9999,
-                    border: '1px solid #334155',
-                    background: active ? '#0ea5e9' : '#0f172a',
-                    color: active ? '#0b0b0b' : '#e5e7eb',
-                    fontWeight: 600
-                  }}
-                >
-                  {d.toLocaleDateString(undefined, { weekday: 'short' })} {fmtDate(d)}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* slot list for selected day */}
-          <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
-            {rows.map((rowStart, i) => {
-              if (!selectedDay) return null;
-              const s = new Date(selectedDay);
-              s.setHours(rowStart.getHours(), rowStart.getMinutes(), 0, 0);
-              const e = new Date(s.getTime() + slotMinutes * 60000);
-              const booked = slotIsBooked(s, e);
-              return (
-                <button
-                  key={i}
-                  disabled={booked}
-                  onClick={() => onPickSlot?.(s)}
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid #334155',
-                    background: booked ? '#7f1d1d' : '#065f46',
-                    color: '#fff',
-                    fontSize: 16,
-                    textAlign: 'left',
-                    opacity: booked ? 0.9 : 1,
-                    cursor: booked ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {fmtTime(s)} — {booked ? 'Booked' : 'Open'}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        // DESKTOP: week grid (Mon–Fri across, times down)
-        <div>
-          {/* headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${days.length}, 1fr)`, borderBottom: '1px solid #1f2937' }}>
-            <div style={cellHeader} />
-            {days.map(d => (
-              <div key={d.toISOString()} style={cellHeader}>
-                {d.toLocaleDateString(undefined, { weekday: 'short' })}
-                <div style={{ fontSize: 12, opacity: .8 }}>{fmtDate(d)}</div>
-              </div>
-            ))}
-          </div>
-          {/* grid */}
-          {rows.map((rowStart, ri) => (
-            <div key={ri} style={{ display: 'grid', gridTemplateColumns: `120px repeat(${days.length}, 1fr)` }}>
-              <div style={cellTime}>{fmtTime(rowStart)}</div>
-              {days.map((d, ci) => {
-                const s = new Date(d); s.setHours(rowStart.getHours(), rowStart.getMinutes(), 0, 0);
-                const e = new Date(s.getTime() + slotMinutes * 60000);
-                const booked = slotIsBooked(s, e);
-                return (
-                  <button
-                    key={ci}
-                    disabled={booked}
-                    onClick={() => onPickSlot?.(s)}
-                    title={booked ? 'Booked' : 'Open'}
-                    style={{
-                      ...cellSlot,
-                      background: booked ? '#7f1d1d' : '#064e3b',
-                      color: '#fff',
-                      cursor: booked ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {booked ? 'Booked' : 'Open'}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {loading && <div style={{ padding: 8, color: '#94a3b8' }}>Loading…</div>}
-      {err && <div style={{ padding: 8, color: '#fecaca' }}>{err}</div>}
+    <div>
+      {loading && <div style={{ color:'#94a3b8', padding: 8 }}>Loading…</div>}
+      {err && <div style={{ color:'#fecaca', padding: 8 }}>Error: {err}</div>}
+      <FullCalendar
+        plugins={[timeGridPlugin, interactionPlugin]}
+        initialView="timeGridWeek"
+        height="auto"
+        allDaySlot={false}
+        slotMinTime="17:00:00"
+        slotMaxTime="20:30:00"
+        nowIndicator
+        selectable={false}
+        events={[...takenEvents, ...availableBg]}
+        dateClick={(info) => {
+          const d = new Date(info.date);
+          // snap to slot boundary
+          const step = slotMinutes;
+          const snapped = new Date(d);
+          snapped.setMinutes(Math.floor(d.getMinutes() / step) * step, 0, 0);
+          const ok = available.some(s => s.start.getTime() === snapped.getTime());
+          if (!ok) return;
+          onPickSlot?.(snapped);
+        }}
+      />
     </div>
   );
 }
-
-const navBtn: React.CSSProperties = { padding: '8px 10px', border: '1px solid #374151', borderRadius: 8, background: '#0f172a', color: '#fff', cursor: 'pointer' };
-const cellHeader: React.CSSProperties = { padding: '10px', borderRight: '1px solid #1f2937', background: '#0b1220', color: '#e5e7eb', fontWeight: 600, textAlign: 'center' };
-const cellTime: React.CSSProperties = { padding: '8px 10px', borderRight: '1px solid #1f2937', borderBottom: '1px dashed #1f2937', color: '#9ca3af', fontSize: 12 };
-const cellSlot: React.CSSProperties = { padding: '6px', borderRight: '1px solid #1f2937', borderBottom: '1px dashed #1f2937' };

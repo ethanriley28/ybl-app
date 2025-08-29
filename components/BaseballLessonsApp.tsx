@@ -63,10 +63,11 @@ export default function BaseballLessonsApp() {
   const [bkLength, setBkLength] = React.useState<number>(60);  // 30 or 60
   const [bkNote, setBkNote] = React.useState<string>('');
 
-  // Feedback
+  // Feedback + calendar refresh key
   const [saving, setSaving] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
+  const [calVer, setCalVer] = React.useState(0);   // <— refresh key
 
   async function handleAddBooking() {
     setMsg(null);
@@ -83,11 +84,11 @@ export default function BaseballLessonsApp() {
       const user_id = u.user?.id ?? null;
       const athlete_name = athletes.find(a => a.id === athleteId)?.full_name ?? null;
 
-      // IMPORTANT: your DB uses start_ts / end_ts (not start_time / end_time)
+      // Use start_ts / end_ts to match your DB
       const { error } = await supabase.from('bookings').insert({
         user_id,
         athlete_id: athleteId,
-        athlete_name, // safe to include if column exists
+        athlete_name, // ok if the column exists; ignore otherwise
         start_ts: start.toISOString(),
         end_ts: end.toISOString(),
         note: bkNote,
@@ -96,6 +97,7 @@ export default function BaseballLessonsApp() {
 
       setMsg('Booked! You should also see this slot turn red in the calendar.');
       setBkNote('');
+      setCalVer(v => v + 1);   // <— trigger calendar refetch
     } catch (e: any) {
       setErr(e?.message || 'Booking failed.');
     } finally {
@@ -244,6 +246,7 @@ export default function BaseballLessonsApp() {
             <div style={{ fontWeight: 700, marginBottom: 8 }}>See openings</div>
             <div style={{ border: '1px solid #222', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
               <BookingCalendar
+                refreshKey={calVer}          // ← forces refetch after booking
                 slotMinutes={bkLength}
                 onPickSlot={(start) => {
                   const yyyy = start.getFullYear();
