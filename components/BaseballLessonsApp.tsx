@@ -24,7 +24,7 @@ function combineLocalDateTime(dateStr: string, timeStr: string) {
 }
 
 export default function BaseballLessonsApp() {
-  // redirect to /auth if not logged in
+  // Redirect to /auth if not logged in
   React.useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -32,7 +32,7 @@ export default function BaseballLessonsApp() {
     })();
   }, []);
 
-  // load athletes
+  // Load athletes (sorted A→Z)
   const [athletes, setAthletes] = React.useState<Athlete[]>([]);
   const [athleteId, setAthleteId] = React.useState<string>('');
   const [loadingAthletes, setLoadingAthletes] = React.useState(true);
@@ -57,13 +57,13 @@ export default function BaseballLessonsApp() {
     })();
   }, []);
 
-  // booking form state
+  // Booking form state
   const [bkDate, setBkDate] = React.useState<string>(toLocalDateInputValue());
-  const [bkTime, setBkTime] = React.useState<string>('17:00');
-  const [bkLength, setBkLength] = React.useState<number>(60);
+  const [bkTime, setBkTime] = React.useState<string>('17:00'); // 5:00 PM default
+  const [bkLength, setBkLength] = React.useState<number>(60);  // 30 or 60
   const [bkNote, setBkNote] = React.useState<string>('');
 
-  // feedback
+  // Feedback
   const [saving, setSaving] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
@@ -79,21 +79,19 @@ export default function BaseballLessonsApp() {
 
     try {
       setSaving(true);
-
       const { data: u } = await supabase.auth.getUser();
       const user_id = u.user?.id ?? null;
       const athlete_name = athletes.find(a => a.id === athleteId)?.full_name ?? null;
 
-      // IMPORTANT: use start_ts / end_ts
+      // IMPORTANT: your DB uses start_ts / end_ts (not start_time / end_time)
       const { error } = await supabase.from('bookings').insert({
         user_id,
         athlete_id: athleteId,
-        athlete_name,
+        athlete_name, // safe to include if column exists
         start_ts: start.toISOString(),
         end_ts: end.toISOString(),
         note: bkNote,
       });
-
       if (error) throw error;
 
       setMsg('Booked! You should also see this slot turn red in the calendar.');
@@ -105,6 +103,7 @@ export default function BaseballLessonsApp() {
     }
   }
 
+  // Styles
   const card: React.CSSProperties = {
     border: '1px solid #e5e7eb',
     borderRadius: 12,
@@ -142,17 +141,18 @@ export default function BaseballLessonsApp() {
   return (
     <main style={{ minHeight: '100dvh', background: '#0b0b0b', color: '#fff' }}>
       <div style={{ maxWidth: 1100, margin: '24px auto', padding: '0 16px' }}>
+        {/* Header */}
         <header style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 22, fontWeight: 800 }}>Ethan Riley Training — Scheduler</div>
-          <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <nav style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a href="/book" style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #374151', background: '#0f172a', color: '#fff', textDecoration: 'none' }}>Book (calendar)</a>
             <a href="/pricing" style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #374151', background: '#0f172a', color: '#fff', textDecoration: 'none' }}>Pricing</a>
             <a href="/register" style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #374151', background: '#0f172a', color: '#fff', textDecoration: 'none' }}>Register Athlete</a>
-          </div>
+          </nav>
         </header>
 
         {/* Athlete picker */}
-        <div style={card}>
+        <section style={card}>
           <div style={{ display: 'grid', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, maxWidth: 520 }}>
               <span style={{ fontSize: 12, color: '#6b7280' }}>Athlete</span>
@@ -169,14 +169,13 @@ export default function BaseballLessonsApp() {
                 ))}
               </select>
             </label>
-
             {loadingAthletes && <div style={{ color: '#94a3b8' }}>Loading athletes…</div>}
             {loadErr && <div style={{ color: '#fecaca' }}>{loadErr}</div>}
           </div>
-        </div>
+        </section>
 
         {/* Create Booking */}
-        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+        <section style={{ marginTop: 16, display: 'grid', gap: 12 }}>
           <div style={{ fontWeight: 700, fontSize: 18 }}>Create Booking</div>
 
           <div style={card}>
@@ -242,24 +241,28 @@ export default function BaseballLessonsApp() {
 
           {/* Availability calendar (selection fills form) */}
           <div>
-  <div style={{ fontWeight: 700, marginBottom: 8 }}>See openings</div>
-  <div style={{ border: '1px solid #222', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
-    <BookingCalendar
-      slotMinutes={bkLength}
-      onPickSlot={(start) => {
-        const yyyy = start.getFullYear();
-        const mm = String(start.getMonth() + 1).padStart(2, '0');
-        const dd = String(start.getDate()).padStart(2, '0');
-        const hh = String(start.getHours()).padStart(2, '0');
-        const mi = String(start.getMinutes()).padStart(2, '0');
-        setBkDate(`${yyyy}-${mm}-${dd}`);
-        setBkTime(`${hh}:${mi}`);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }}
-    />
-  </div>
-  <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>
-    Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
-  </div>
-</div>
-
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>See openings</div>
+            <div style={{ border: '1px solid #222', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
+              <BookingCalendar
+                slotMinutes={bkLength}
+                onPickSlot={(start) => {
+                  const yyyy = start.getFullYear();
+                  const mm = String(start.getMonth() + 1).padStart(2, '0');
+                  const dd = String(start.getDate()).padStart(2, '0');
+                  const hh = String(start.getHours()).padStart(2, '0');
+                  const mi = String(start.getMinutes()).padStart(2, '0');
+                  setBkDate(`${yyyy}-${mm}-${dd}`);
+                  setBkTime(`${hh}:${mi}`);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>
+              Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
