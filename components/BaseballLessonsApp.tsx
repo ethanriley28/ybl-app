@@ -245,19 +245,20 @@ export default function BaseballLessonsApp() {
             <div style={{ fontWeight: 700, marginBottom: 8 }}>See openings</div>
             <div style={{ border: '1px solid #222', borderRadius: 12, overflow: 'hidden', background: '#0b0b0b' }}>
               <BookingCalendar
-                athleteId={null}
-                slotMinutes={bkLength}
-                onPickSlot={(start) => {
-                  const yyyy = start.getFullYear();
-                  const mm = String(start.getMonth() + 1).padStart(2, '0');
-                  const dd = String(start.getDate()).padStart(2, '0');
-                  const hh = String(start.getHours()).padStart(2, '0');
-                  const mi = String(start.getMinutes()).padStart(2, '0');
-                  setBkDate(`${yyyy}-${mm}-${dd}`);
-                  setBkTime(`${hh}:${mi}`);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              />
+                <BookingCalendar
+  slotMinutes={bkLength}
+  onPickSlot={(start) => {
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    const hh = String(start.getHours()).padStart(2, '0');
+    const mi = String(start.getMinutes()).padStart(2, '0');
+    setBkDate(`${yyyy}-${mm}-${dd}`);
+    setBkTime(`${hh}:${mi}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }}
+/>
+
             </div>
             <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>
               Green = openings · Red = booked. Tap a green time to fill the form above, then press <b>Add Booking</b>.
